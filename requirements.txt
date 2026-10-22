@@ -1,0 +1,7 @@
+osmnx>=2.0
+osmium>=4.0
+networkx
+matplotlib
+pandas
+requests
+scikit-learn
