@@ -16,6 +16,18 @@ python3 -m venv .venv
 .venv/bin/python main.py --range 300   # try another battery range (default 250)
 ```
 
+Or run everything in one go: `./run_all.sh` (add `--quick` to skip `main.py`). It sets up
+`.venv` if needed, runs `runtime.py` and `main.py`, then opens the web demo.
+
+**Web demo.** Open `dijkstra-demo.html` in any browser (no install, works offline). It replays
+Dijkstra one line of code at a time, highlighting the line next to the map, the waitlist and
+the distance table, and compares the real runtime with the slowed-down animation.
+The source is in `web/` (TypeScript + React): `npm install`, then `npm run dev` to develop
+or `npm run build:single` to rebuild `dijkstra-demo.html`.
+
+**Runtime.** `.venv/bin/python runtime.py` times a minimal Dijkstra on the real trip and on
+random graphs from 1k to 64k nodes, and saves `figures/runtime.png`.
+
 `main.py` prints every Dijkstra step, the best route, and how the answer changes with range,
 then writes the figures to `figures/`. The first run downloads the map and the road data
 (1–2 minutes). After that, everything comes from `cache/`, so later runs take a few seconds
@@ -28,6 +40,9 @@ and work offline.
 | `dijkstra.py` | Dijkstra's algorithm, path traceback, and the range-limited charging graph |
 | `visualize.py` | every figure, including the animation of the search on the map |
 | `main.py` | runs the analysis and makes the figures |
+| `runtime.py` | minimal Dijkstra plus a runtime function, timed on growing graphs |
+| `web/` | TypeScript + React step-by-step demo; built into `dijkstra-demo.html` |
+| `run_all.sh` | runs everything above and opens the demo |
 
 To plan a different trip, edit `START`, `END` and `STATIONS` in `stations.py`, and the map
 frame `BOUNDS` in `visualize.py`.
