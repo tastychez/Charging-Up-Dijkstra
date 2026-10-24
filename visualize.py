@@ -4,6 +4,7 @@ Usage:
     python visualize.py
     python visualize.py --region rhode-island --states RI
     python visualize.py --region boston --roads all
+    python visualize.py --region dallas-boston --roads highways --states TX OK AR MO TN KY IL IN OH VA WV MD PA NJ NY CT MA
 """
 
 import argparse
@@ -12,7 +13,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import osmnx as ox
 
-from data import ALL_ROADS, CITIES, MAJOR_ROADS, load_chargers, load_street_graph, snap_chargers
+from data import CITIES, ROAD_LEVELS, ROUTES, load_chargers, load_street_graph, snap_chargers
 
 FIGURE_DIR = Path(__file__).parent / "figures"
 
@@ -44,14 +45,15 @@ def plot_network(G, chargers, title, out_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--region", default="massachusetts",
-                        help="Geofabrik US state name (massachusetts, rhode-island) or a city in CITIES (boston)")
+                        help="Geofabrik state name (massachusetts), a city in CITIES (boston) or a route in ROUTES (dallas-boston)")
     parser.add_argument("--states", nargs="+", default=["MA"],
                         help="State codes for chargers, e.g. MA RI")
-    parser.add_argument("--roads", choices=["major", "all"], default="major",
-                        help="major = highways and main roads, all = every drivable street")
+    parser.add_argument("--roads", choices=list(ROAD_LEVELS), default="major",
+                        help="highways = interstates and highways, major = also main roads, "
+                             "route = also secondary roads, all = every drivable street")
     args = parser.parse_args()
 
-    road_types = ALL_ROADS if args.roads == "all" else MAJOR_ROADS
+    road_types = ROAD_LEVELS[args.roads]
     G = load_street_graph(args.region, road_types)
     chargers = load_chargers(args.states)
     if args.region in CITIES:
@@ -69,9 +71,12 @@ def main():
     FIGURE_DIR.mkdir(exist_ok=True)
     out_path = FIGURE_DIR / f"network_{args.region}_{args.roads}.png"
     region_name = args.region.replace("-", " ").title()
+    if args.region in ROUTES:
+        region_name = args.region.replace("-", " to ").title().replace(" To ", " to ")
     if args.region in CITIES:
         region_name += " area"
-    road_label = "every street" if args.roads == "all" else "major roads"
+    road_label = {"highways": "highways", "major": "major roads", "route": "highways, main and secondary roads",
+                  "all": "every street"}[args.roads]
     plot_network(G, chargers, f"{region_name} {road_label} and DC fast chargers", out_path)
     print(f"Saved {out_path}")
 

@@ -1,8 +1,11 @@
 """Download, cache, and combine the road network and EV charger data."""
 
 import os
+import pickle
+import time
 from pathlib import Path
 
+import networkx as nx
 import osmium
 import osmnx as ox
 import pandas as pd
@@ -22,26 +25,76 @@ if _env_file.exists():
 # Road types to keep. Highways only keeps long-trip graphs small.
 HIGHWAYS = ["motorway", "motorway_link", "trunk", "trunk_link"]
 MAJOR_ROADS = HIGHWAYS + ["primary", "primary_link"]
+# Highway ramps end on main and secondary roads, so a route graph needs those too.
+# With highways only, about half the intersections in Massachusetts are dead ends.
+ROUTE_ROADS = MAJOR_ROADS + ["secondary", "secondary_link"]
 # Every road a car can drive on. Only practical for a city-sized area.
-ALL_ROADS = MAJOR_ROADS + ["secondary", "secondary_link", "tertiary", "tertiary_link",
+ALL_ROADS = ROUTE_ROADS + ["tertiary", "tertiary_link",
                            "unclassified", "residential", "living_street"]
+
+ROAD_LEVELS = {"highways": HIGHWAYS, "major": MAJOR_ROADS, "route": ROUTE_ROADS, "all": ALL_ROADS}
 
 # City-sized areas cut out of a state file, as (state, (west, south, east, north)).
 CITIES = {
     "boston": ("massachusetts", (-71.191, 42.227, -70.986, 42.400)),
 }
 
-GEOFABRIK_URL = "https://download.geofabrik.de/north-america/us/{region}-latest.osm.pbf"
+# Multi-state areas built by joining several state files.
+# Dallas to Boston covers the three main ways to drive it:
+#   I-30/I-40 (AR, TN) then I-81 (VA, WV, MD, PA) then I-84 (NY, CT)
+#   I-44 (OK, MO) then I-70 (IL, IN, OH) then I-90 (PA, NY)
+#   I-40 to Nashville then north through KY to OH
+ROUTES = {
+    "dallas-boston": ["texas", "oklahoma", "arkansas", "missouri", "tennessee",
+                      "kentucky", "illinois", "indiana", "ohio", "virginia",
+                      "west-virginia", "maryland", "pennsylvania", "new-jersey",
+                      "new-york", "connecticut", "massachusetts"],
+}
+
+STATE_CODES = {
+    "arkansas": "AR", "connecticut": "CT", "illinois": "IL", "indiana": "IN",
+    "kentucky": "KY", "maryland": "MD", "massachusetts": "MA", "missouri": "MO",
+    "new-jersey": "NJ", "new-york": "NY", "ohio": "OH", "oklahoma": "OK",
+    "pennsylvania": "PA", "rhode-island": "RI", "tennessee": "TN", "texas": "TX",
+    "virginia": "VA", "west-virginia": "WV",
+}
+
+
+def region_states(region):
+    """Return the two-letter state codes a region covers, for loading its chargers."""
+    if region in ROUTES:
+        return [STATE_CODES[s] for s in ROUTES[region]]
+    state = CITIES[region][0] if region in CITIES else region
+    return [STATE_CODES[state]]
+
+
+GEOFABRIK_URL ="https://download.geofabrik.de/north-america/us/{region}-latest.osm.pbf"
 AFDC_URL = "https://developer.nlr.gov/api/alt-fuel-stations/v1.json"
 
 
-def _download(url, path):
-    print(f"Downloading {url}")
-    with requests.get(url, stream=True, timeout=60) as response:
-        response.raise_for_status()
-        with open(path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=1 << 20):
-                f.write(chunk)
+def _download(url, path, attempts=5):
+    """Download url to path, retrying on network errors.
+
+    Writes to a .part file first so a cut-off download is never mistaken for a full one.
+    """
+    part = path.with_suffix(path.suffix + ".part")
+    for attempt in range(1, attempts + 1):
+        print(f"Downloading {url}" + (f" (try {attempt})" if attempt > 1 else ""))
+        try:
+            with requests.get(url, stream=True, timeout=120) as response:
+                response.raise_for_status()
+                with open(part, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=1 << 20):
+                        f.write(chunk)
+            part.rename(path)
+            return
+        except requests.RequestException as error:
+            part.unlink(missing_ok=True)
+            if attempt == attempts:
+                raise
+            wait = 15 * attempt
+            print(f"Download failed ({error.__class__.__name__}), retrying in {wait}s")
+            time.sleep(wait)
 
 
 def _extract_roads(pbf_path, osm_path, road_types, bbox=None):
@@ -68,38 +121,95 @@ def _touches_bbox(way, bbox):
     return False
 
 
-def load_street_graph(region, road_types=MAJOR_ROADS):
-    """Return the road network for a US state or a city in CITIES as a directed graph.
+def _state_roads_file(state, road_types, bbox=None, name=None):
+    """Return an .osm file with the chosen roads of one state, extracting it if needed.
 
-    `region` is a Geofabrik state name such as "massachusetts" or "rhode-island",
-    or a city name from CITIES such as "boston".
-    Vertices are intersections (with x = longitude, y = latitude).
-    Edges are road segments with a `miles` attribute.
+    State files we download only for this step are deleted afterwards to save disk space.
     """
-    state, bbox = CITIES.get(region, (region, None))
-
-    DATA_DIR.mkdir(exist_ok=True)
-    graph_path = DATA_DIR / f"streets_{region}_{len(road_types)}types.graphml"
-    if graph_path.exists():
-        return ox.load_graphml(graph_path, edge_dtypes={"miles": float})
+    osm_path = DATA_DIR / f"roads_{name or state}_{len(road_types)}types.osm"
+    if osm_path.exists():
+        return osm_path
 
     pbf_path = DATA_DIR / f"{state}-latest.osm.pbf"
-    if not pbf_path.exists():
+    downloaded_now = not pbf_path.exists()
+    if downloaded_now:
         _download(GEOFABRIK_URL.format(region=state), pbf_path)
 
-    osm_path = DATA_DIR / f"roads_{region}_{len(road_types)}types.osm"
-    if not osm_path.exists():
-        print("Extracting roads")
-        _extract_roads(pbf_path, osm_path, road_types, bbox)
+    print(f"Extracting roads from {state}")
+    _extract_roads(pbf_path, osm_path, road_types, bbox)
+    if downloaded_now and not bbox:
+        pbf_path.unlink()
+    return osm_path
 
-    print("Building graph")
-    G = ox.graph_from_xml(osm_path, simplify=True)
-    if bbox:
-        G = ox.truncate.truncate_graph_bbox(G, bbox)
+
+def load_street_graph(region, road_types=MAJOR_ROADS):
+    """Return the road network for a region as a directed graph.
+
+    `region` is a Geofabrik state name ("massachusetts", "rhode-island"),
+    a city from CITIES ("boston"), or a multi-state route from ROUTES ("omaha-boston").
+    Vertices are intersections (with x = longitude, y = latitude).
+    Edges are road segments with a `miles` attribute.
+
+    The graph is cleaned so routing can never get stuck: roads that loop back to
+    the same intersection are removed, and only the largest strongly connected
+    piece is kept, so every intersection can be reached from every other one.
+    """
+    DATA_DIR.mkdir(exist_ok=True)
+    graph_path = DATA_DIR / f"streets_{region}_{len(road_types)}types.pkl"
+    if graph_path.exists():
+        with open(graph_path, "rb") as f:
+            return pickle.load(f)
+
+    if region in ROUTES:
+        # OpenStreetMap ids are shared across state files, so roads that cross
+        # a state line join up when the state graphs are combined.
+        graphs = []
+        for state in ROUTES[region]:
+            osm_path = _state_roads_file(state, road_types)
+            graphs.append(ox.graph_from_xml(osm_path, simplify=True, retain_all=True))
+        print("Joining states")
+        G = nx.compose_all(graphs)
+    else:
+        state, bbox = CITIES.get(region, (region, None))
+        osm_path = _state_roads_file(state, road_types, bbox, name=region)
+        print("Building graph")
+        G = ox.graph_from_xml(osm_path, simplify=True)
+        if bbox:
+            G = ox.truncate.truncate_graph_bbox(G, bbox)
+
+    G = clean_graph(G)
+    with open(graph_path, "wb") as f:
+        pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return G
+
+
+def clean_graph(G):
+    """Make the street graph safe for routing.
+
+    - OpenStreetMap occasionally stores one intersection as two points at the exact
+      same spot joined by a road of length 0. Those pairs are merged into one intersection.
+    - Roads that loop back to the same intersection are removed.
+    - Only the largest strongly connected piece is kept, so every intersection can
+      be reached from every other one.
+    """
+    for u, v in [(u, v) for u, v, d in G.edges(data=True) if d["length"] <= 0]:
+        if u != v and u in G and v in G:
+            nx.contracted_nodes(G, u, v, self_loops=False, copy=False)
+    G.remove_edges_from(list(nx.selfloop_edges(G)))
+    G = ox.truncate.largest_component(G, strongly=True)
     for _, _, data in G.edges(data=True):
         data["miles"] = data["length"] / METERS_PER_MILE
-    ox.save_graphml(G, graph_path)
     return G
+
+
+def routing_graph(G):
+    """Return a simple directed graph for shortest-path algorithms.
+
+    OpenStreetMap sometimes has two road segments between the same pair of
+    intersections. This keeps only the shorter one, so G[u][v]["miles"] is
+    always the length of the best road from u to v.
+    """
+    return ox.convert.to_digraph(G, weight="miles")
 
 
 def load_chargers(states):
