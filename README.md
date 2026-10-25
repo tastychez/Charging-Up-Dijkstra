@@ -21,6 +21,17 @@ python3 -m venv .venv
 .venv/bin/python check_graphs.py                            # check every part of the graphs (should print "All checks passed")
 ```
 
+Second example, Buffalo, NY to Springfield, MO, on its own six-state map (NY PA OH IN IL MO).
+On the full Dallas to Boston map the same trip gives the same answer (4 stops, 956.1 miles at 250 miles of range).
+
+```bash
+.venv/bin/python charger_graph.py --region buffalo-springfield
+.venv/bin/python trip.py "Buffalo, NY" "Springfield, MO" --region buffalo-springfield
+.venv/bin/python check_graphs.py --region buffalo-springfield --trip "Buffalo, NY" "Springfield, MO"
+.venv/bin/python visualize.py --region buffalo-springfield              # street graph
+.venv/bin/python visualize.py --region buffalo-springfield --chargers   # charger graph
+```
+
 Smaller test region (builds in about a minute):
 
 ```bash
@@ -106,8 +117,21 @@ overestimates the remaining cost.
 ```bash
 .venv/bin/python visualize.py                                  # Massachusetts major roads
 .venv/bin/python visualize.py --region boston --roads all      # every street in the Boston area
-.venv/bin/python visualize.py --region dallas-boston --roads route --states TX OK AR MO TN KY IL IN OH VA WV MD PA NJ NY CT MA
+.venv/bin/python visualize.py --region dallas-boston                       # full street graph, all 17 states
+.venv/bin/python visualize.py --region dallas-boston --around "Nashville, TN" --miles 12   # zoom in to see the intersections
+.venv/bin/python visualize.py --region dallas-boston --with-chargers       # chargers drawn on top of the streets
+.venv/bin/python visualize.py --region dallas-boston --around "Boston, MA" --miles 5              # Boston road close-up
+.venv/bin/python visualize.py --region dallas-boston --chargers --around "Boston, MA" --miles 5   # Boston charger close-up
+.venv/bin/python visualize.py --region dallas-boston --within "Boston, MA"                # the whole city of Boston
+.venv/bin/python visualize.py --region dallas-boston --chargers --within "Boston, MA"
+.venv/bin/python visualize.py --region dallas-boston --within MA                          # all of Massachusetts
+.venv/bin/python visualize.py --region dallas-boston --chargers --within MA
+.venv/bin/python visualize.py --region dallas-boston --chargers            # full charger graph, 250 mile range
+.venv/bin/python visualize.py --region dallas-boston --chargers --range 150 --near "St. Louis, MO"
 ```
+
+The charger graph map draws every leg as a straight line between two chargers and
+shows in orange the legs out of the charger closest to `--near`.
 
 ## Data
 

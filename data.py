@@ -49,6 +49,8 @@ ROUTES = {
                       "kentucky", "illinois", "indiana", "ohio", "virginia",
                       "west-virginia", "maryland", "pennsylvania", "new-jersey",
                       "new-york", "connecticut", "massachusetts"],
+    # Second example. Its shortest route only uses these six states.
+    "buffalo-springfield": ["new-york", "pennsylvania", "ohio", "indiana", "illinois", "missouri"],
 }
 
 STATE_CODES = {
@@ -70,6 +72,8 @@ def region_states(region):
 
 GEOFABRIK_URL ="https://download.geofabrik.de/north-america/us/{region}-latest.osm.pbf"
 AFDC_URL = "https://developer.nlr.gov/api/alt-fuel-stations/v1.json"
+# US Census Bureau state outlines, simplified for maps (about 1 MB).
+STATE_BORDERS_URL = "https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_state_20m.zip"
 
 
 def _download(url, path, attempts=5):
@@ -237,6 +241,18 @@ def load_chargers(states):
     df = pd.DataFrame(stations)[columns]
     df.to_csv(path, index=False)
     return df
+
+
+def load_state_borders(states):
+    """Return the outlines of the given states (two-letter codes) as a GeoDataFrame, for maps only."""
+    import geopandas as gpd
+
+    path = DATA_DIR / "us_states_20m.zip"
+    if not path.exists():
+        DATA_DIR.mkdir(exist_ok=True)
+        _download(STATE_BORDERS_URL, path)
+    borders = gpd.read_file(path)
+    return borders[borders["STUSPS"].isin(states)].to_crs("EPSG:4326")
 
 
 def snap_chargers(G, chargers, max_snap_miles=2.0):

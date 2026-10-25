@@ -108,12 +108,11 @@ def build_charger_graph(region="dallas-boston", road_types=data.ROUTE_ROADS, bat
     return stations, edges
 
 
-def load_charger_graph(region="dallas-boston", usable_miles=250 * 0.8, road_types=data.ROUTE_ROADS):
-    """Return the charger graph for a car that can drive `usable_miles` per leg.
+def load_charger_legs(region="dallas-boston", usable_miles=250 * 0.8, road_types=data.ROUTE_ROADS):
+    """Return the saved (stations, legs) tables without building a graph.
 
-    Vertices are the street-graph intersection ids of the chargers, with
-    attributes name, city, state, lat, lon, snap_miles and stations.
-    Edges have `miles` (the full leg, including both detours) and `road_miles`.
+    `legs` has columns source, target (row numbers in `stations`), road_miles and miles,
+    and only keeps legs of at most `usable_miles`.
     """
     path = data.DATA_DIR / f"chargers_{region}_{len(road_types)}types.pkl"
     if not path.exists():
@@ -122,15 +121,24 @@ def load_charger_graph(region="dallas-boston", usable_miles=250 * 0.8, road_type
         saved = pickle.load(f)
     if usable_miles > saved["max_leg_miles"]:
         raise ValueError(f"Legs were only computed up to {saved['max_leg_miles']} miles")
+    edges = saved["edges"]
+    return saved["stations"], edges[edges["miles"] <= usable_miles]
 
-    stations, edges = saved["stations"], saved["edges"]
+
+def load_charger_graph(region="dallas-boston", usable_miles=250 * 0.8, road_types=data.ROUTE_ROADS):
+    """Return the charger graph for a car that can drive `usable_miles` per leg.
+
+    Vertices are the street-graph intersection ids of the chargers, with
+    attributes name, city, state, lat, lon, snap_miles and stations.
+    Edges have `miles` (the full leg, including both detours) and `road_miles`.
+    """
+    stations, keep = load_charger_legs(region, usable_miles, road_types)
     C = nx.DiGraph()
     for row in stations.itertuples():
         C.add_node(row.node, name=row.station_name, city=row.city, state=row.state,
                    lat=row.latitude, lon=row.longitude, snap_miles=row.snap_miles,
                    stations=row.stations)
     ids = stations["node"].to_numpy()
-    keep = edges[edges["miles"] <= usable_miles]
     C.add_edges_from(
         (ids[s], ids[t], {"miles": float(m), "road_miles": float(r)})
         for s, t, m, r in zip(keep["source"], keep["target"], keep["miles"], keep["road_miles"])
