@@ -20,7 +20,7 @@ python3 -m venv .venv
 .venv/bin/python trip.py "Dallas, TX" "Boston, MA" --range 150
 .venv/bin/python trip.py "Dallas, TX" "Boston, MA" --algorithm astar   # same route, found with our A*
 .venv/bin/python compare_algorithms.py "Dallas, TX" "Boston, MA"       # our Dijkstra vs our A* vs NetworkX
-.venv/bin/python shortest_trip.py "Dallas, TX" "Boston, MA"            # fewest miles instead of fewest stops
+.venv/bin/python shortest_trip.py "Dallas, TX" "Boston, MA"            # same shortest route, drawn on a map
 .venv/bin/python check_graphs.py                            # check every part of the graphs (should print "All checks passed")
 ```
 
@@ -75,12 +75,8 @@ The road miles between chargers are computed once with SciPy's published Dijkstr
 **Trip** (`trip.plan_trip`). Combines both graphs:
 1. Looks up the start and end with OpenStreetMap's place search and matches each to its nearest intersection.
 2. Adds START and END to a copy of the charger graph, connected to every charger the car can reach.
-3. Finds the best path from START to END. The vertices on it are the charging stops.
-   The best path has the fewest charging stops, and among those the fewest miles.
-   To do that, each leg is searched by `cost` = miles + 10,000. The miles we report
-   never include the extra 10,000. Dallas to Boston with a 250 mile range takes
-   9 stops and 1,774.0 miles this way, compared with 11 stops and 1,773.1 miles
-   when only miles count.
+3. Finds the shortest path in miles from START to END. The vertices on it are the
+   charging stops.
 4. Turns each leg back into the actual roads on the street graph and draws the map in `figures/`.
 
 ## Our Dijkstra and A*
@@ -98,20 +94,17 @@ trip.plan_trip("Dallas, TX", "Boston, MA", range_miles=250, find_path=search.ast
 ```
 
 **A\*'s guess.** Every vertex has coordinates, and no road is shorter than the
-straight line between its ends, so the straight-line miles to the target never
-overestimates. On the trip graph, where every leg also costs 10,000, the guess adds
-10,000 for each leg that must still be driven: ceil(straight-line miles / longest leg).
-Both guesses are consistent, so A\* finds the same best route as Dijkstra.
+straight line between its ends. So the straight-line miles to the target never
+overestimates, and A\* finds the same shortest route as Dijkstra.
 
-**Results** (`compare_algorithms.py`, Dallas to Boston, 4,967 vertices). All three
-algorithms find routes of the same weight; A\* expands about half as many vertices.
+**Results** (`compare_algorithms.py`, Dallas to Boston, 4,973 vertices). All three
+algorithms find the same shortest route; A\* expands about a third fewer vertices.
 
-| Range | Goal | Miles | Stops | Our Dijkstra | Our A\* | NetworkX Dijkstra |
-|---|---|---|---|---|---|---|
-| 150 | fewest stops | 1,782.4 | 16 | 4,810 vertices, 275 ms | 2,609 vertices, 167 ms | 224 ms |
-| 250 | fewest stops | 1,774.0 | 9 | 4,811 vertices, 512 ms | 2,250 vertices, 260 ms | 424 ms |
-| 250 | fewest miles | 1,773.1 | 11 | 4,811 vertices, 513 ms | 2,653 vertices, 329 ms | 435 ms |
-| 300 | fewest stops | 1,773.0 | 7 | 4,811 vertices, 652 ms | 1,930 vertices, 291 ms | 547 ms |
+| Range | Miles | Stops | Our Dijkstra | Our A\* | NetworkX Dijkstra |
+|---|---|---|---|---|---|
+| 150 | 1,739.9 | 18 | 4,816 vertices, 680 ms | 3,229 vertices, 614 ms | 996 ms |
+| 250 | 1,737.8 | 10 | 4,817 vertices, 823 ms | 3,246 vertices, 597 ms | 599 ms |
+| 300 | 1,737.6 | 8 | 4,817 vertices, 991 ms | 3,246 vertices, 768 ms | 774 ms |
 
 Times are the fastest of 3 runs on an Apple laptop, after the graph is loaded.
 `check_graphs.py` checks that our Dijkstra and A\* match NetworkX on every test trip.

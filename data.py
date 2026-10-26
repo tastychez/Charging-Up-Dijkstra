@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 import networkx as nx
+import numpy as np
 import osmium
 import osmnx as ox
 import pandas as pd
@@ -166,11 +167,18 @@ def load_street_graph(region, road_types=MAJOR_ROADS):
 
     if region in ROUTES:
         # OpenStreetMap ids are shared across state files, so roads that cross
-        # a state line join up when the state graphs are combined.
+        # a state line join up when the state graphs are combined. A road that
+        # crosses a state line is in both files, and its points have to stay
+        # vertices in both state graphs. Otherwise each state simplifies the road
+        # differently, the two halves share no vertex, and the crossing is lost
+        # (this broke eastbound I-40 over the Mississippi at Memphis).
+        osm_paths = [_state_roads_file(state, road_types) for state in ROUTES[region]]
+        shared = _shared_node_ids(osm_paths)
         graphs = []
-        for state in ROUTES[region]:
-            osm_path = _state_roads_file(state, road_types)
-            graphs.append(ox.graph_from_xml(osm_path, simplify=True, retain_all=True))
+        for osm_path in osm_paths:
+            g = ox.graph_from_xml(osm_path, simplify=False, retain_all=True)
+            nx.set_node_attributes(g, {n: True for n in g if n in shared}, "border")
+            graphs.append(ox.simplify_graph(g, node_attrs_include=["border"]))
         print("Joining states")
         G = nx.compose_all(graphs)
     else:
@@ -185,6 +193,15 @@ def load_street_graph(region, road_types=MAJOR_ROADS):
     with open(graph_path, "wb") as f:
         pickle.dump(G, f, protocol=pickle.HIGHEST_PROTOCOL)
     return G
+
+
+def _shared_node_ids(osm_paths):
+    """Ids of the points that appear in more than one state file (roads crossing a state line)."""
+    ids = []
+    for path in osm_paths:
+        ids.append(np.fromiter((n.id for n in osmium.FileProcessor(str(path), osmium.osm.NODE)), dtype=np.int64))
+    values, counts = np.unique(np.concatenate(ids), return_counts=True)
+    return set(values[counts > 1].tolist())
 
 
 def clean_graph(G):

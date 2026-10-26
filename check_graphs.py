@@ -13,10 +13,11 @@ import random
 import networkx as nx
 import numpy as np
 import osmnx as ox
+from scipy.sparse.csgraph import dijkstra
 
 import data
 import search
-from charger_graph import MAX_LEG_MILES, charger_stations, load_charger_graph
+from charger_graph import MAX_LEG_MILES, charger_stations, load_charger_graph, street_matrix
 from trip import plan_trip
 
 failures = []
@@ -70,6 +71,19 @@ def main():
           f"{stations['stations'].sum():,} of {len(all_chargers):,} chargers kept at "
           f"{len(stations):,} intersections, median {stations['snap_miles'].median():.2f} mi away")
 
+    # A road that is missing in one direction (like a state-line crossing that
+    # didn't join up) makes many drives far longer one way than the other.
+    # A few big differences are normal: a rest stop or frontage road that only
+    # goes one way can mean driving to the next exit and back.
+    matrix, _, index = street_matrix(G)
+    rows = np.array([index[n] for n in stations["node"]])
+    sources = random.sample(list(rows), min(60, len(rows)))
+    there = dijkstra(matrix, directed=True, indices=sources)[:, rows]
+    back = dijkstra(matrix.T.tocsr(), directed=True, indices=sources)[:, rows]
+    share = (np.abs(there - back) > 50).mean()
+    check("no road is missing in one direction: under 1 in 200 charger pairs differ by over 50 miles "
+          "between A -> B and B -> A", share < 0.005, f"{share:.3%} of {there.size:,} pairs")
+
     print("\nCharger graph")
     C = load_charger_graph(args.region, MAX_LEG_MILES, road_types)
     print(f"      {C.number_of_nodes():,} charger locations, {C.number_of_edges():,} legs")
@@ -109,13 +123,12 @@ def main():
         check(f"{range_miles} mi range: total miles = roads driven + detours",
               abs(road_total + detours - trip["total_miles"]) < 1e-2)
         T = trip["trip_graph"]
-        for weight in ("cost", "miles"):
-            length = lambda path: sum(T[a][b][weight] for a, b in zip(path, path[1:]))
-            expected = length(nx.dijkstra_path(T, "START", "END", weight=weight))
-            ours = {name: length(search.ALGORITHMS[name](T, "START", "END", weight))
-                    for name in ("dijkstra", "astar")}
-            check(f"{range_miles} mi range: our Dijkstra and A* match NetworkX on {weight}",
-                  all(abs(v - expected) < 1e-6 for v in ours.values()))
+        length = lambda path: sum(T[a][b]["miles"] for a, b in zip(path, path[1:]))
+        expected = length(nx.dijkstra_path(T, "START", "END", weight="miles"))
+        ours = {name: length(search.ALGORITHMS[name](T, "START", "END", "miles"))
+                for name in ("dijkstra", "astar")}
+        check(f"{range_miles} mi range: our Dijkstra and A* match NetworkX",
+              all(abs(v - expected) < 1e-6 for v in ours.values()))
 
     print(f"\n{'All checks passed' if not failures else f'{len(failures)} checks failed'}")
 

@@ -3,9 +3,8 @@
 1. Look up the start and end places and match each to its nearest intersection.
 2. Add START and END to a copy of the charger graph, connected to every charger
    the car can reach on one charge.
-3. Find the shortest path from START to END in that graph. The vertices along it
-   are the charging stops. Edges are weighted by `cost` (miles plus a large amount
-   per leg), so the route with the fewest stops wins, then the shortest one.
+3. Find the shortest path in miles from START to END in that graph. The vertices
+   along it are the charging stops.
 4. Turn each leg back into the actual roads with a shortest path on the street graph.
 
 `find_path` is the algorithm used in step 3. It defaults to our own Dijkstra
@@ -37,12 +36,6 @@ from charger_graph import load_charger_graph, street_matrix
 FIGURE_DIR = Path(__file__).parent / "figures"
 GEOCODE_CACHE = data.DATA_DIR / "geocode.json"
 BUFFER = 0.8  # only plan legs that use at most 80 percent of the car's range
-# When choosing a route, every leg also costs this many miles. It is larger than
-# any trip, so the route with the fewest charging stops always wins, and among
-# routes with that many stops the shortest one wins. Reported miles never include it.
-# Dallas to Boston at 250 miles: 9 stops and 1,774.0 miles, instead of 11 stops
-# and 1,773.1 miles when only miles count.
-STOP_COST_MILES = 10_000
 
 
 def geocode(place):
@@ -87,7 +80,7 @@ def plan_trip(start, end, range_miles=250, region="dallas-boston",
     to_end = dijkstra(matrix.T.tocsr(), indices=index[ends["END"]["node"]], limit=usable)
 
     T = C.copy()
-    T.graph.update(usable_miles=usable, stop_cost_miles=STOP_COST_MILES)  # for A*'s guess
+    T.graph.update(usable_miles=usable)  # for A*'s guess
     for label, info in ends.items():
         T.add_node(label, name=info["place"], lat=info["lat"], lon=info["lon"],
                    snap_miles=info["snap_miles"])
@@ -102,10 +95,8 @@ def plan_trip(start, end, range_miles=250, region="dallas-boston",
     if s_snap + direct + e_snap <= usable:
         T.add_edge("START", "END", miles=s_snap + direct + e_snap, road_miles=direct)
 
-    for _, _, d in T.edges(data=True):
-        d["cost"] = d["miles"] + STOP_COST_MILES
     try:
-        stops = find_path(T, "START", "END", weight="cost")
+        stops = find_path(T, "START", "END", weight="miles")
     except nx.NetworkXNoPath:
         raise SystemExit(f"No route: a car with {range_miles} miles of range can't make this trip "
                          f"with legs under {usable:.0f} miles.")

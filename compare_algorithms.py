@@ -1,7 +1,6 @@
 """Compare our Dijkstra, our A* and NetworkX's Dijkstra on the full trip graph.
 
-For each range and each goal (fewest stops = trip.py's `cost`, or fewest miles),
-every algorithm searches the same graph. The script checks that they agree on the
+For each range, every algorithm searches the same graph for the fewest miles. The script checks that they agree on the
 best weight and reports how many vertices each one expanded and how long it took.
 
 Usage:
@@ -17,7 +16,7 @@ import networkx as nx
 import search
 import trip
 
-GOALS = {"cost": "fewest stops", "miles": "fewest miles"}
+GOALS = {"miles": "fewest miles"}
 
 
 def fastest(func, repeat):
