@@ -1,7 +1,7 @@
 """Search work and time of Dijkstra on two real trips, as a slide table.
 
-Trips: Boston → Dallas and Buffalo, NY → Springfield, MO, on the same real network
-(network.py) with a 200-mile range (80% of a 250-mile Model Y). Boston → Dallas runs
+Trips: Dallas → Boston and Buffalo, NY → Springfield, MO, on the same real network
+(network.py) with a 200-mile range (80% of a 250-mile Model Y). Dallas → Boston runs
 our hand-written Dijkstra, NetworkX and SciPy; Buffalo → Springfield only ours.
 
   Nodes expanded  vertices taken off the heap with their distance final

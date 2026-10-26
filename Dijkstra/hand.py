@@ -61,7 +61,7 @@ def straight_line_miles(a, b):
 
 
 if __name__ == "__main__":
-    # Boston → Dallas on the real network (about 5,000 chargers), 200-mile range.
+    # Dallas → Boston on the real network (about 5,000 chargers), 200-mile range.
     from dijkstra import charging_graph
     from network import END, START, load_network
 

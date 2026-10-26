@@ -3,7 +3,7 @@
   NetworkX  networkx.single_source_dijkstra, pure Python (what trip.py used at first)
   SciPy     scipy.sparse.csgraph.dijkstra, compiled C (what charger_graph.py uses)
 
-For each range, all three search the same charging graph from Boston to Dallas. The
+For each range, all three search the same charging graph from Dallas to Boston. The
 script checks they find the same shortest distance, then draws each one's route and
 compares their running times. Only the search is timed, not building the graph.
 
@@ -112,9 +112,9 @@ def plot_runtime(table, path):
     ax.spines[["top", "right"]].set_visible(False)
     ax.set_xlim(right=max(row["edges"] for row in table) / 1e6 * 1.22)
     ax.legend(loc="upper left", frameon=False)
-    ax.set_title("Boston → Dallas: how long each Dijkstra takes", loc="left", pad=24)
+    ax.set_title("Dallas → Boston: how long each Dijkstra takes", loc="left", pad=24)
     ax.text(0, 1.015, "All three find the same shortest distance at every range. SciPy runs "
-            "compiled C and finds every distance; the other two are pure Python and stop at Dallas.",
+            "compiled C and finds every distance; the other two are pure Python and stop at Boston.",
             transform=ax.transAxes, color=MUTED, fontsize=9, va="bottom")
     fig.tight_layout()
     fig.savefig(path, dpi=180, bbox_inches="tight")

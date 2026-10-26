@@ -2,7 +2,7 @@
 
 Run from this folder:
     ../.venv/bin/python runtime.py
-Prints the Boston → Dallas route on the real network, a timing table, and saves
+Prints the Dallas → Boston route on the real network, a timing table, and saves
 figures/runtime.png.
 """
 
@@ -98,7 +98,7 @@ def demo_real_trip(max_range=200):
     (best, prev), seconds = runtime(dijkstra, graph, START, END, repeat=3)
 
     stops = path_to(prev, START, END)
-    print(f"Boston → Dallas with a {max_range}-mile range "
+    print(f"Dallas → Boston with a {max_range}-mile range "
           f"({len(graph) - 2:,} chargers, {sum(map(len, graph.values())):,} edges)")
     print(f"  {best[END]:,.1f} miles, {len(stops) - 2} stops: " + " → ".join(cities[v] for v in stops))
     print(f"  runtime: {seconds * 1e3:.0f} ms")

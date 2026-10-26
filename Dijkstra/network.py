@@ -8,7 +8,7 @@ the short detour from the road to the charger at both ends. The start and end of
 trip are joined to every charger within 240 road miles.
 
 The first call for a trip takes about a minute; the result is cached in cache/
-(cache/network.pkl for Boston to Dallas).
+(cache/network.pkl for Dallas to Boston).
 """
 
 import pickle
@@ -19,8 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = Path(__file__).parent / "cache" / "network.pkl"
 
-START = "Boston, MA"
-END = "Dallas, TX"
+START = "Dallas, TX"
+END = "Boston, MA"
 # A range here is the longest leg the car may drive: 80 percent of a full charge, so a
 # Model Y's 250 miles gives 200. data/ has legs up to 240 miles.
 MAX_RANGE = 240

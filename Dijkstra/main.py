@@ -1,4 +1,4 @@
-"""Boston → Dallas in an EV: which DC fast chargers give the shortest trip?
+"""Dallas → Boston in an EV: which DC fast chargers give the shortest trip?
 
 Runs on the real network: every public DC fast charger in the 17 states between
 Boston and Dallas (see network.py). Needs the root .venv and data/ (root README).
@@ -77,7 +77,7 @@ def main():
 
     print("\nDrawing figures on the real map")
     FIGURES.mkdir(exist_ok=True)
-    # Boston → Dallas keeps the plain names; another trip adds its own, e.g. route_buffalo_springfield.png.
+    # Dallas → Boston keeps the plain names; another trip adds its own, e.g. route_buffalo_springfield.png.
     suffix = "" if (start, end) == (START, END) else \
         "_" + "_".join(re.sub(r"[^a-z]+", "_", p.split(",")[0].lower()) for p in (start, end))
     plot_route(stops, miles, graph, args.range, FIGURES / f"route{suffix}.png")
