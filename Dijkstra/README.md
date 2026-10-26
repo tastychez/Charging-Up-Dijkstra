@@ -118,7 +118,7 @@ The graph is directed, so the trip the other way, Boston → Dallas, is a differ
 The animation at the top tells the story in three acts:
 
 1. **The real network.** All 4,971 chargers.
-2. **Dijkstra.** Each frame jumps ahead about 70 steps. Blue dots are settled (their distance
+2. **Dijkstra.** Each frame jumps ahead about 80 steps. Blue dots are settled (their distance
    is final), orange dots are waiting in the queue, gray dots are not reached yet, and the
    thin blue lines are the shortest-path tree (`prev`).
 3. **Trace back** from Boston through `prev[]`, drawing each leg along the real roads.
@@ -183,14 +183,15 @@ every range from 40 to 240 miles: ours (`dijkstra.py`), NetworkX's `single_sourc
 ![Search time of each method](figures/library_runtime.png)
 
 - **Same answer.** At every range all three find the same distance and the same stops.
-- **Ours beats NetworkX by about 2x.** Both are pure Python and stop at Boston, but NetworkX
+- **Ours beats NetworkX by about 1.8x.** Both are pure Python and stop at Boston, but NetworkX
   looks up each edge's weight in an attribute dictionary and handles general cases, while
   ours reads a plain number from `{node: {neighbor: miles}}`.
 - **SciPy is about 35x faster than ours** even though it finds the distance to *every*
   charger, not just Boston: its loop runs in compiled C over arrays instead of Python dicts.
   The algorithm is the same; the constant factor is what differs.
 - All three grow roughly in line with the number of edges, as O((V + E) log V) predicts.
-  Timings are the fastest of 3 runs on an Apple laptop.
+  The 40-mile point is low because there is no route: the search runs out of reachable
+  chargers after 871 of them and stops. Timings are the fastest of 3 runs on an Apple laptop.
 
 ## Second trip: Buffalo → Springfield, MO
 
@@ -200,7 +201,7 @@ Plainfield, IN (491), Vandalia, IL (652) and Sullivan, MO (782).
 
 ![Buffalo to Springfield with a 200-mile range](figures/route_buffalo_springfield.png)
 
-The trip is half as long as Dallas → Boston, but the search does almost as much work:
+The trip is half as long as Dallas → Boston, but the search does 80% as much work:
 Dijkstra settles everything closer to Buffalo than Springfield is, so it covers New England
 and Virginia, behind the start, before it reaches Missouri.
 
@@ -216,7 +217,8 @@ and Virginia, behind the start, before it reaches Missouri.
 | Buffalo → Springfield | Hand-written | 147.59 | 3,868 | 2,893,605 |
 
 Ours and NetworkX do exactly the same work; ours is faster per edge. SciPy does not stop at
-the end, so it settles every node and checks every edge, and is still the fastest.
+the end, so it settles every node and checks every edge, and is still the fastest. These
+times are medians, so they run a little higher than the fastest-of-3 times above.
 
 ## Limitations
 

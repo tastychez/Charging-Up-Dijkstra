@@ -173,7 +173,8 @@ def plot_sweep(sweep, chosen_range, path):
     if first > sweep[0][0]:
         top.text((sweep[0][0] + first) / 2, sum(top.get_ylim()) / 2, "no route possible",
                  ha="center", va="center", rotation=90, color=MUTED, fontsize=8)
-    top.annotate(f"{first} mi range: first feasible\n{miles[0]:,.1f} mi, {plural(stops[0], 'stop')}",
+    top.annotate(f"{first} mi range: first in the sweep with a route\n"
+                 f"{miles[0]:,.1f} mi, {plural(stops[0], 'stop')}",
                  (first, miles[0]), xytext=(60, -2), textcoords="offset points", fontsize=9, va="top",
                  arrowprops={"arrowstyle": "-", "color": MUTED})
     if chosen_range in ranges:
