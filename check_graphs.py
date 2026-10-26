@@ -15,6 +15,7 @@ import numpy as np
 import osmnx as ox
 
 import data
+import search
 from charger_graph import MAX_LEG_MILES, charger_stations, load_charger_graph
 from trip import plan_trip
 
@@ -107,6 +108,14 @@ def main():
             2 * sum(C.nodes[n]["snap_miles"] for n in trip["stops"][1:-1])
         check(f"{range_miles} mi range: total miles = roads driven + detours",
               abs(road_total + detours - trip["total_miles"]) < 1e-2)
+        T = trip["trip_graph"]
+        for weight in ("cost", "miles"):
+            length = lambda path: sum(T[a][b][weight] for a, b in zip(path, path[1:]))
+            expected = length(nx.dijkstra_path(T, "START", "END", weight=weight))
+            ours = {name: length(search.ALGORITHMS[name](T, "START", "END", weight))
+                    for name in ("dijkstra", "astar")}
+            check(f"{range_miles} mi range: our Dijkstra and A* match NetworkX on {weight}",
+                  all(abs(v - expected) < 1e-6 for v in ours.values()))
 
     print(f"\n{'All checks passed' if not failures else f'{len(failures)} checks failed'}")
 

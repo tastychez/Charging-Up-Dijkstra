@@ -1,5 +1,5 @@
-"""Fetch the real map: background tiles from OpenStreetMap, and real driving distances
-and road shapes from the OSRM routing service.
+"""Fetch the real map: background tiles from OpenStreetMap, and road shapes for drawing
+routes from the OSRM routing service. (The distances themselves come from data/, see network.py.)
 
 Everything downloaded is cached in cache/, so only the first run needs the internet.
 """
@@ -15,14 +15,12 @@ from PIL import Image
 
 CACHE = Path(__file__).parent / "cache"
 TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-TABLE_URL = "https://router.project-osrm.org/table/v1/driving/{coords}?annotations=distance"
 ROUTE_URL = "https://router.project-osrm.org/route/v1/driving/{coords}?overview=full&geometries=geojson"
 ATTRIBUTION = "Map © OpenStreetMap contributors · Roads: OSRM"
 USER_AGENT = "Charging-Up-Dijkstra (discrete math class project)"
 
 TILE_PIXELS = 256
 EARTH_RADIUS_M = 6378137          # sphere used by Web Mercator
-METERS_PER_MILE = 1609.344
 
 
 def mercator(lat, lon):
@@ -72,27 +70,6 @@ def basemap(south, west, north, east, zoom):
     left = -pi * EARTH_RADIUS_M + x0 * tile_m
     top = pi * EARTH_RADIUS_M - y0 * tile_m
     return image, (left, left + len(columns) * tile_m, top - len(rows) * tile_m, top)
-
-
-def road_distances(stations):
-    """Real driving miles from every station to every other: {a: {b: miles}}.
-
-    OSRM measures each one along the fastest driving route. A → B and B → A can differ
-    (ramps, one-way streets), so the graph built from this table is directed.
-    One request for the whole table, cached in cache/distances.json.
-    """
-    coords = _osrm_coords(stations.values())
-    path = CACHE / "distances.json"
-    table = json.loads(path.read_text()) if path.exists() else {}
-    if table.get("coords") != coords:          # first run, or the stations changed
-        table = {"coords": coords,
-                 "meters": json.loads(_get(TABLE_URL.format(coords=coords)))["distances"]}
-        CACHE.mkdir(exist_ok=True)
-        path.write_text(json.dumps(table))
-
-    names = list(stations)
-    return {a: {b: round(table["meters"][i][j] / METERS_PER_MILE) for j, b in enumerate(names)}
-            for i, a in enumerate(names)}
 
 
 @cache

@@ -18,6 +18,9 @@ python3 -m venv .venv
 .venv/bin/python charger_graph.py                          # build the street graph and charger graph (first run downloads 17 states)
 .venv/bin/python trip.py "Dallas, TX" "Boston, MA"          # plan a trip with a 250 mile range
 .venv/bin/python trip.py "Dallas, TX" "Boston, MA" --range 150
+.venv/bin/python trip.py "Dallas, TX" "Boston, MA" --algorithm astar   # same route, found with our A*
+.venv/bin/python compare_algorithms.py "Dallas, TX" "Boston, MA"       # our Dijkstra vs our A* vs NetworkX
+.venv/bin/python shortest_trip.py "Dallas, TX" "Boston, MA"            # fewest miles instead of fewest stops
 .venv/bin/python check_graphs.py                            # check every part of the graphs (should print "All checks passed")
 ```
 
@@ -80,37 +83,38 @@ The road miles between chargers are computed once with SciPy's published Dijkstr
    when only miles count.
 4. Turns each leg back into the actual roads on the street graph and draws the map in `figures/`.
 
-## Plugging in our own Dijkstra and A*
+## Our Dijkstra and A*
 
-Write a function with the same signature as `networkx.dijkstra_path`:
-
-```python
-def our_dijkstra(graph, source, target, weight="miles"):
-    ...
-    return path  # list of vertices from source to target
-```
-
-Then:
+`search.py` has our own `dijkstra_path` and `astar_path`. Both have the same signature
+as `networkx.dijkstra_path(graph, source, target, weight)`, so they work on the street
+graph, the charger graph and the trip graph. `trip.plan_trip` uses our Dijkstra by
+default; `--algorithm astar` or `--algorithm networkx` picks another one.
 
 ```python
-import data, trip
-from charger_graph import load_charger_graph
+import search, trip
 
-G = data.load_street_graph("dallas-boston", data.ROUTE_ROADS)
-D = data.routing_graph(G)              # street graph: D[u][v]["miles"], D.nodes[n]["x"] = longitude, ["y"] = latitude
-C = load_charger_graph("dallas-boston", usable_miles=200)   # charger graph: C[u][v]["miles"], C.nodes[n]["lat"], ["lon"]
-
-our_dijkstra(D, some_intersection, other_intersection)
-trip.plan_trip("Dallas, TX", "Boston, MA", range_miles=250, find_path=our_dijkstra)   # trip graph edges are searched by weight="cost"
+trip.plan_trip("Dallas, TX", "Boston, MA", range_miles=250)                              # our Dijkstra
+trip.plan_trip("Dallas, TX", "Boston, MA", range_miles=250, find_path=search.astar_path) # our A*
 ```
 
-For A*, every vertex has coordinates, so the straight-line distance to the target
-can be computed with `osmnx.distance.great_circle(lat1, lon1, lat2, lon2)` (meters,
-divide by `data.METERS_PER_MILE`). In the trip graph, START and END also have `lat` and `lon`.
+**A\*'s guess.** Every vertex has coordinates, and no road is shorter than the
+straight line between its ends, so the straight-line miles to the target never
+overestimates. On the trip graph, where every leg also costs 10,000, the guess adds
+10,000 for each leg that must still be driven: ceil(straight-line miles / longest leg).
+Both guesses are consistent, so A\* finds the same best route as Dijkstra.
 
-On the trip graph the search runs on `cost` (miles + 10,000 per leg), not `miles`.
-The straight-line miles to END is still a safe A* guess there because it never
-overestimates the remaining cost.
+**Results** (`compare_algorithms.py`, Dallas to Boston, 4,967 vertices). All three
+algorithms find routes of the same weight; A\* expands about half as many vertices.
+
+| Range | Goal | Miles | Stops | Our Dijkstra | Our A\* | NetworkX Dijkstra |
+|---|---|---|---|---|---|---|
+| 150 | fewest stops | 1,782.4 | 16 | 4,810 vertices, 275 ms | 2,609 vertices, 167 ms | 224 ms |
+| 250 | fewest stops | 1,774.0 | 9 | 4,811 vertices, 512 ms | 2,250 vertices, 260 ms | 424 ms |
+| 250 | fewest miles | 1,773.1 | 11 | 4,811 vertices, 513 ms | 2,653 vertices, 329 ms | 435 ms |
+| 300 | fewest stops | 1,773.0 | 7 | 4,811 vertices, 652 ms | 1,930 vertices, 291 ms | 547 ms |
+
+Times are the fastest of 3 runs on an Apple laptop, after the graph is loaded.
+`check_graphs.py` checks that our Dijkstra and A\* match NetworkX on every test trip.
 
 ## Maps
 
@@ -156,6 +160,9 @@ shows in orange the legs out of the charger closest to `--near`.
 
 - `data.py` downloads, caches and cleans the road and charger data
 - `charger_graph.py` builds and loads the charger graph
+- `search.py` our own Dijkstra and A*
 - `trip.py` plans a trip on both graphs and draws it
+- `compare_algorithms.py` compares our Dijkstra, our A* and NetworkX on the full trip graph
+- `shortest_trip.py` plans the fewest-miles route and draws it next to the fewest-stops one
 - `check_graphs.py` checks that every part of the graphs is correct
 - `visualize.py` plots a road network with chargers on top

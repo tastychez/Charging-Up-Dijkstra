@@ -1,2 +1,2 @@
-matplotlib
-pillow
+# The real network needs the full project's packages.
+-r ../requirements.txt

@@ -1,48 +1,42 @@
 """Dijkstra's algorithm, and the range-limited charging graph it runs on."""
 
 import heapq
+from bisect import bisect_right
 
 
 def dijkstra(graph, source, target=None):
-    """Shortest paths from `source` in a graph {node: {neighbor: miles}}.
+    """Shortest distances from `source` in a graph {node: {neighbor: miles}}.
 
-    Stops as soon as `target` is settled (or explores everything if target is None).
-    Among routes of equal length, the one with fewer edges (charging stops) wins.
-
-    Returns (dist, prev, trace):
-      dist  - shortest distance to every reached node
-      prev  - the node we came from on that shortest path
-      trace - one entry per settled node, in settling order:
-              (node, distance, [(neighbor, its new distance), ...])
+    Returns (best, prev, trace): the distance to every reached node, the node we came
+    from on that route, and one (node, miles, [(neighbor, new miles), ...]) entry per
+    settled node, in settling order, for the animation.
     """
-    best = {source: (0, 0)}          # node -> (miles, edges) of best known route
-    prev = {}
-    settled = set()
-    trace = []
-    heap = [(0, 0, source)]
+    best = {source: 0} # starting point is zero
+    prev = {} # where we came from
+    heap = [(0, source)] # waitlist
+    trace = [] # settled points in order
 
+
+    # the distance from starting point to u is miles.
+    # u is current position, v is the neighbour to u, and w is the distance from u to v
     while heap:
-        miles, edges, u = heapq.heappop(heap)
-        if u in settled:
-            continue                 # outdated heap entry
-        settled.add(u)
-
+        miles, u = heapq.heappop(heap) # take the closest point
+        if miles > best[u]:
+            continue # outdated entry, a shorter way to u was already found
         updates = []
         if u != target:
             for v, w in graph[u].items():
-                candidate = (miles + w, edges + 1)
-                if v not in settled and (v not in best or candidate < best[v]):
-                    best[v] = candidate
+                new_miles = miles + w
+                if v not in best or new_miles < best[v]:
+                    best[v] = new_miles
                     prev[v] = u
-                    heapq.heappush(heap, (*candidate, v))
-                    updates.append((v, candidate[0]))
+                    heapq.heappush(heap, (new_miles, v))
+                    updates.append((v, new_miles))
         trace.append((u, miles, updates))
-
         if u == target:
-            break
+            break # the target's distance is final
 
-    dist = {node: miles for node, (miles, _) in best.items()}
-    return dist, prev, trace
+    return best, prev, trace
 
 
 def shortest_path(prev, source, target):
@@ -55,21 +49,26 @@ def shortest_path(prev, source, target):
     return path[::-1]
 
 
-def charging_graph(road_miles, max_range):
-    """Edge A → B only if a fully charged car can drive the road from A to B.
+def charging_graph(legs, max_range):
+    """Edge A → B only if the car can drive the leg from A to B on one charge:
+    leg miles <= max_range (80 percent of a full battery, e.g. 200 for a 250-mile car).
 
-    Edge weight = road distance. The battery limit lives in which edges exist.
+    Edge weight = leg miles. The battery limit lives in which edges exist.
     The graph is directed because A → B and B → A can differ by a few miles.
+    legs[a] = (miles, neighbors), shortest first (see network.load_network).
     """
-    return {a: {b: d for b, d in row.items() if b != a and d <= max_range}
-            for a, row in road_miles.items()}
+    graph = {}
+    for a, (miles, nbrs) in legs.items():
+        k = bisect_right(miles, max_range)
+        graph[a] = dict(zip(nbrs[:k], miles[:k]))
+    return graph
 
 
-def plan_route(road_miles, source, target, max_range):
+def plan_route(legs, source, target, max_range):
     """Best charging route for one range. Returns (stops, total_miles, graph, trace).
 
     stops is None (and total_miles is None) when the trip is impossible.
     """
-    graph = charging_graph(road_miles, max_range)
+    graph = charging_graph(legs, max_range)
     dist, prev, trace = dijkstra(graph, source, target)
     return shortest_path(prev, source, target), dist.get(target), graph, trace
