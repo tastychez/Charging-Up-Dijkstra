@@ -4,13 +4,15 @@ The data comes from the repository root (data/, built by charger_graph.py):
 about 5,000 charger locations in 17 states from the Department of Energy's station
 list, and the road miles between every two of them that are at most 240 miles apart,
 measured on OpenStreetMap roads. Each leg includes
-the short detour from the road to the charger at both ends. Boston and Dallas are
-joined to every charger within 240 road miles.
+the short detour from the road to the charger at both ends. The start and end of a
+trip are joined to every charger within 240 road miles.
 
-The first call takes about 15 seconds; the result is cached in cache/network.pkl.
+The first call for a trip takes about a minute; the result is cached in cache/
+(cache/network.pkl for Boston to Dallas).
 """
 
 import pickle
+import re
 import sys
 from pathlib import Path
 
@@ -24,22 +26,31 @@ END = "Dallas, TX"
 MAX_RANGE = 240
 
 
-def load_network():
-    """Return (coords, cities, names, legs) for the whole network.
+def cache_path(start, end):
+    if (start, end) == (START, END):
+        return CACHE
+    slug = lambda place: re.sub(r"[^a-z]+", "_", place.lower()).strip("_")
+    return CACHE.with_name(f"network_{slug(start)}_to_{slug(end)}.pkl")
+
+
+def load_network(start=START, end=END):
+    """Return (coords, cities, names, legs) for the whole network, from start to end.
 
     coords[v] = (lat, lon) and cities[v] = "City, ST" for every vertex v; names[v] is
     the charger's name. legs[u] = (miles, neighbors): the legs out of u, shortest first.
-    Chargers are named by their street-graph id as a string; the ends by START and END.
+    Chargers are named by their street-graph id as a string; the ends by their place names.
     """
-    if CACHE.exists():
-        with open(CACHE, "rb") as f:
+    cache = cache_path(start, end)
+    if cache.exists():
+        with open(cache, "rb") as f:
             return pickle.load(f)
 
     sys.path.insert(0, str(ROOT))
     import trip  # root module: needs the root .venv and data/
 
-    T = trip.plan_trip(START, END, MAX_RANGE)["trip_graph"]
-    vid = {"START": START, "END": END}
+    # trip.py takes the full range and keeps legs up to 80 percent of it.
+    T = trip.plan_trip(start, end, MAX_RANGE / trip.BUFFER)["trip_graph"]
+    vid = {"START": start, "END": end}
     vid.update({n: str(n) for n in T if n not in vid})
 
     coords, cities, names, legs = {}, {}, {}, {}
@@ -52,7 +63,7 @@ def load_network():
         legs[v] = ([m for m, _ in row], [b for _, b in row])
 
     network = coords, cities, names, legs
-    CACHE.parent.mkdir(exist_ok=True)
-    with open(CACHE, "wb") as f:
+    cache.parent.mkdir(exist_ok=True)
+    with open(cache, "wb") as f:
         pickle.dump(network, f, protocol=pickle.HIGHEST_PROTOCOL)
     return network

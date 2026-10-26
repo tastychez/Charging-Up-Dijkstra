@@ -7,10 +7,12 @@ Run from this folder:
     ../.venv/bin/python main.py               # analysis + figures in figures/
     ../.venv/bin/python main.py --show        # also play the search live in a window
     ../.venv/bin/python main.py --range 240   # a different range (up to 240)
+    ../.venv/bin/python main.py --start "Buffalo, NY" --end "Springfield, MO"   # another trip
 The first run loads the full network (about 15 seconds) and caches it in cache/.
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -19,7 +21,7 @@ import matplotlib.pyplot as plt
 from dijkstra import plan_route
 from network import END, MAX_RANGE, START, load_network
 from visualize import (GifWriter, animate_search, plot_range_grid, plot_route,
-                       plot_search_snapshots, plot_sweep, plural, short)
+                       plot_search_snapshots, plot_sweep, plural, short, use_trip)
 
 COMPARE = [120, 160, 200, 240]   # ranges for the side-by-side figure
 SWEEP = range(40, MAX_RANGE + 1, 4)  # ranges for the sensitivity analysis
@@ -32,26 +34,30 @@ def main():
     parser.add_argument("--range", type=int, default=200,
                         help=f"longest leg in miles: 80%% of a full charge (default 200 = 80%% "
                              f"of a 250-mile Model Y, up to {MAX_RANGE})")
+    parser.add_argument("--start", default=START, help=f"default {START}")
+    parser.add_argument("--end", default=END, help=f"default {END}")
     parser.add_argument("--show", action="store_true", help="play the search live in a window")
     args = parser.parse_args()
     if not 0 < args.range <= MAX_RANGE:
         sys.exit(f"--range must be between 1 and {MAX_RANGE}: data/ only has legs up to "
                  f"{MAX_RANGE} miles.")
 
-    _, _, names, legs = load_network()
-    stops, miles, graph, trace = plan_route(legs, START, END, args.range)
+    start, end = args.start, args.end
+    use_trip(start, end)
+    _, _, names, legs = load_network(start, end)
+    stops, miles, graph, trace = plan_route(legs, start, end, args.range)
     if stops is None:
         sys.exit(f"No route with a {args.range}-mile range: some gap is too long. Try a longer range.")
 
     edges = sum(len(nbrs) for nbrs in graph.values())
     print(f"Charging graph for a {args.range}-mile range: "
-          f"{len(graph) - 2:,} chargers + {short(START)} + {short(END)}, {edges:,} directed edges\n")
+          f"{len(graph) - 2:,} chargers + {short(start)} + {short(end)}, {edges:,} directed edges\n")
 
     print(f"Dijkstra, every {PRINT_EVERY}th step")
     for step, (u, d, updates) in enumerate(trace, 1):
         if step % PRINT_EVERY == 0 or step in (1, len(trace)):
             print(f"{step:6,}. settle {short(u):<26} {d:8,.1f} mi | improved {len(updates):,} neighbors")
-    print(f"Settled {len(trace):,} of {len(graph):,} vertices before {short(END)}")
+    print(f"Settled {len(trace):,} of {len(graph):,} vertices before {short(end)}")
 
     print(f"\nBest route: {miles:,.1f} miles, {plural(len(stops) - 2, 'charging stop')}")
     for a, b in zip(stops, stops[1:]):
@@ -59,7 +65,7 @@ def main():
 
     sweep = []
     for r in SWEEP:
-        path, total, _, _ = plan_route(legs, START, END, r)
+        path, total, _, _ = plan_route(legs, start, end, r)
         sweep.append((r, total, len(path) - 2 if path else None))
 
     print("\nVarying the range (only the ranges where the answer changes)")
@@ -71,13 +77,16 @@ def main():
 
     print("\nDrawing figures on the real map")
     FIGURES.mkdir(exist_ok=True)
-    plot_route(stops, miles, graph, args.range, FIGURES / "route.png")
-    plot_range_grid([(r, *plan_route(legs, START, END, r)[:3]) for r in COMPARE],
-                    FIGURES / "range_comparison.png")
-    plot_sweep(sweep, args.range, FIGURES / "range_sweep.png")
-    plot_search_snapshots(trace, FIGURES / "search_snapshots.png")
+    # Boston → Dallas keeps the plain names; another trip adds its own, e.g. route_buffalo_springfield.png.
+    suffix = "" if (start, end) == (START, END) else \
+        "_" + "_".join(re.sub(r"[^a-z]+", "_", p.split(",")[0].lower()) for p in (start, end))
+    plot_route(stops, miles, graph, args.range, FIGURES / f"route{suffix}.png")
+    plot_range_grid([(r, *plan_route(legs, start, end, r)[:3]) for r in COMPARE],
+                    FIGURES / f"range_comparison{suffix}.png")
+    plot_sweep(sweep, args.range, FIGURES / f"range_sweep{suffix}.png")
+    plot_search_snapshots(trace, FIGURES / f"search_snapshots{suffix}.png")
     anim = animate_search(graph, trace, stops, miles, args.range)
-    anim.save(FIGURES / "search_on_map.gif", writer=GifWriter(fps=1.5), dpi=90)
+    anim.save(FIGURES / f"search_on_map{suffix}.gif", writer=GifWriter(fps=1.5), dpi=90)
     print(f"Figures saved to {FIGURES}")
 
     if args.show:

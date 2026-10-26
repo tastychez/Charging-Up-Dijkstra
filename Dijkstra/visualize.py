@@ -22,14 +22,22 @@ GRID, NODE = "#d6d5cf", "#8a8983"
 ROUTE, FRONTIER = "#2a78d6", "#eb6834"
 HALO = [pe.withStroke(linewidth=2.5, foreground="white")]
 
-COORDS, CITIES, NAMES, _ = load_network()
-VERTICES = list(COORDS)
-XY = np.array([mercator(*COORDS[v]) for v in VERTICES])
-INDEX = {v: i for i, v in enumerate(VERTICES)}
 
-# Map frame (south, west, north, east) around every charger, with a little margin.
-_lats, _lons = zip(*COORDS.values())
-BOUNDS = (min(_lats) - 0.4, min(_lons) - 0.6, max(_lats) + 0.4, max(_lons) + 0.6)
+
+def use_trip(start, end):
+    """Draw the network of the trip from start to end in every figure below."""
+    global START, END, COORDS, CITIES, NAMES, VERTICES, XY, INDEX, BOUNDS
+    START, END = start, end
+    COORDS, CITIES, NAMES, _ = load_network(start, end)
+    VERTICES = list(COORDS)
+    XY = np.array([mercator(*COORDS[v]) for v in VERTICES])
+    INDEX = {v: i for i, v in enumerate(VERTICES)}
+    # Map frame (south, west, north, east) around every charger, with a little margin.
+    lats, lons = zip(*COORDS.values())
+    BOUNDS = (min(lats) - 0.4, min(lons) - 0.6, max(lats) + 0.4, max(lons) + 0.6)
+
+
+use_trip(START, END)
 
 plt.rcParams.update({
     "figure.facecolor": BG, "axes.facecolor": BG, "savefig.facecolor": BG,
@@ -64,7 +72,9 @@ def draw_map(ax, zoom=5):
     ax.set_ylim(y0, y1)
     ax.set_axis_off()
     ax.scatter(*XY.T, s=1.2, color=NODE, lw=0, zorder=2)
-    for v, side in ((START, "left"), (END, "right")):
+    west = min((START, END), key=lambda v: xy(v)[0])
+    for v in (START, END):   # each label on the outer side, away from the route
+        side = "left" if v == west else "right"
         ax.scatter(*xy(v), s=60, marker="*", color=INK, zorder=9)
         ax.annotate(short(v), xy(v), xytext=(-8 if side == "left" else 8, 0), textcoords="offset points",
                     ha="right" if side == "left" else "left", va="center", fontsize=9,
