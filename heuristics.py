@@ -19,7 +19,7 @@ def validate_coordinates(latitude, longitude):
 
 
 def haversine_miles(lat1, lon1, lat2, lon2):
-    """Great-circle distance on a spherical Earth; inputs are decimal degrees."""
+    """Great circle distance on a spherical Earth; inputs are decimal degrees."""
     lat1, lon1, lat2, lon2 = map(radians, (lat1, lon1, lat2, lon2))
     delta_lat = lat2 - lat1
     delta_lon = lon2 - lon1
@@ -30,11 +30,8 @@ def haversine_miles(lat1, lon1, lat2, lon2):
 
 
 def manhattan_miles(lat1, lon1, lat2, lon2):
-    """Approximate north/south miles + east/west miles to the destination.
-
-    Use the destination latitude as a fixed reference for longitude's scale.
-    This is an equirectangular approximation, not an exact Earth-surface path.
-    The return value is RAW Manhattan: use prepare_heuristic before A* on roads.
+    """Approximate north/south + east/west distance in miles.
+    Use prepare_heuristic() before A* to check and scale as needed.
     """
     lat1, lon1, lat2, lon2 = map(radians, (lat1, lon1, lat2, lon2))
     delta_lon = atan2(sin(lon2 - lon1), cos(lon2 - lon1))  # Wrap at +/-180 degrees.

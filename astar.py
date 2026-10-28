@@ -1,13 +1,13 @@
 """David's heap-based A*, with a selectable heuristic and optional search counts."""
 
-from heapq import heappop, heappush
+from heapq import heappop, heappush, nsmallest
 from itertools import count
 from math import isfinite
 
 from heuristics import estimate_remaining_miles
 
 
-def astar(graph, start, goal, heuristic=None, stats=None, trace=None):
+def astar(graph, start, goal, heuristic=None, stats=None, trace=None, trace_compact=False):
     """Return (route, total_miles), or None when the goal is unreachable.
 
     Accept either {node: {neighbor: miles}} or the original NetworkX graphs
@@ -19,6 +19,8 @@ def astar(graph, start, goal, heuristic=None, stats=None, trace=None):
     Among exactly equal-distance paths, fewer driving legs win.
     Pass an empty trace list to record search steps for animation. Trace
     collection is optional and is excluded from the runner's timed searches.
+    Compact traces retain the top 12 queued candidates and final predecessor/
+    distance dictionaries, avoiding a full copy at every large-graph step.
     """
     if start not in graph or goal not in graph:
         raise ValueError("Both start and goal must be nodes in the graph.")
@@ -43,14 +45,18 @@ def astar(graph, start, goal, heuristic=None, stats=None, trace=None):
     def record_step(current, priority, updates, is_goal=False):
         if trace is None:
             return
-        queued = []
-        for f, legs, serial, node, distance in sorted(frontier):
-            if (distance, legs) == (g_score[node], hops[node]):
-                queued.append(dict(node=node, g=distance, h=f-distance, f=f, legs=legs))
-        trace.append(dict(current=current, g=g_score[current], h=float(heuristic(current)),
-                          f=priority, updates=updates, previous=dict(previous),
-                          distances=dict(g_score), frontier=queued,
-                          expanded=list(expanded_nodes), is_goal=is_goal))
+        valid = [entry for entry in frontier if (entry[4], entry[1]) == (g_score[entry[3]], hops[entry[3]])]
+        pending = nsmallest(12, valid) if trace_compact else sorted(valid)
+        queued = [dict(node=node,g=distance,h=f-distance,f=f,legs=legs)
+                  for f,legs,serial,node,distance in pending]
+        step = dict(current=current, g=g_score[current], h=float(heuristic(current)),
+                    f=priority, updates=updates, frontier=queued, frontier_count=len(valid),
+                    expanded_count=len(expanded_nodes), is_goal=is_goal)
+        if not trace_compact or is_goal:
+            step.update(previous=dict(previous),distances=dict(g_score))
+        if not trace_compact:
+            step["expanded"] = list(expanded_nodes)
+        trace.append(step)
     if stats is not None:
         stats.clear()
         stats.update(expanded=0, edge_checks=0, heap_pushes=1, stale_pops=0,
@@ -103,4 +109,6 @@ def astar(graph, start, goal, heuristic=None, stats=None, trace=None):
                     stats["heap_pushes"] += 1
                     stats["peak_frontier"] = max(stats["peak_frontier"], len(frontier))
         record_step(current, priority, updates)
+    if trace is not None and trace_compact and trace:
+        trace[-1].update(previous=dict(previous), distances=dict(g_score))
     return None

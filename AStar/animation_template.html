@@ -10,6 +10,13 @@
 @media(max-width:1050px){.workspace{grid-template-columns:minmax(0,1fr) 290px}.facts{gap:12px}.fact b{font-size:16px}.panel{padding:12px}.table-wrap,.route-list{max-height:200px}}
 @media(max-width:800px){header{padding:18px 14px 12px}main{padding:0 14px 20px}.workspace{grid-template-columns:1fr}.side{display:grid;grid-template-columns:1fr 1fr}.side .data-card{grid-column:1/-1;order:3}.topbar{gap:12px}.table-wrap,.route-list{max-height:220px}.facts{gap:16px}h1{font-size:23px}.message{min-height:0}}
 @media(max-width:480px){.side{grid-template-columns:1fr}.side .data-card{grid-column:auto}.facts{gap:12px}.fact b{font-size:15px}.control-row .spacer{display:none}.control-row .phase-jump{flex:1}.map-switch{font-size:10px}.segmented button{padding:7px 9px}}
+.map-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 14px;background:#f3f7fa;border-bottom:1px solid var(--line)}
+.map-tools .map-switch{position:static;margin:0;white-space:nowrap}
+.marker-control{display:flex;align-items:center;gap:9px;min-height:26px;font-size:11px;color:var(--muted)}
+.marker-control input{width:105px;min-width:65px;accent-color:var(--blue);cursor:pointer}
+.marker-control output{min-width:37px;text-align:right;font-variant-numeric:tabular-nums}
+.focus-callout{pointer-events:none}
+@media(max-width:480px){.map-tools{padding:8px 10px;gap:6px}.marker-control{gap:7px}.marker-control input{width:95px}}
 </style>
 </head>
 <body>
@@ -30,10 +37,13 @@
         <h2 id="frame-title"></h2><p class="message" id="frame-message"></p>
       </div>
       <div class="map-wrap">
-        <label class="map-switch"><input type="checkbox" id="all-edges"> Show full feasible graph</label>
+        <div class="map-tools" role="group" aria-label="Map appearance">
+          <div class="marker-control"><label for="marker-size">Charger dots</label><input type="range" id="marker-size" min="40" max="220" value="100" step="10" aria-label="Charger dot size"><output id="marker-size-value" for="marker-size">100%</output></div>
+          <label class="map-switch"><input type="checkbox" id="all-edges"> Show full feasible graph</label>
+        </div>
         <svg id="map" viewBox="0 0 1000 600" role="img" aria-label="Charging graph, search focus, recovered route, and car"></svg>
       </div>
-      <div class="legend"><span><i class="key" style="background:#16835d"></i>Start / car</span><span><i class="key" style="background:#c8464e"></i>Destination</span><span><i class="key" style="background:#1477bd"></i>Expanded</span><span><i class="key" style="background:#e09a35"></i>Frontier</span><span><i class="key" style="background:#7955b6"></i>Reachable now</span></div>
+      <div class="legend"><span><i class="key" style="background:#9caebb;opacity:.5"></i>Other chargers</span><span><i class="key" style="background:#16835d"></i>Car / current stop</span><span><i class="key" style="background:#c8464e"></i>Destination</span><span><i class="key" style="background:#1477bd"></i>Expanded / numbered route stops</span><span><i class="key" style="background:#ce731f"></i>Search focus</span><span><i class="key" style="background:#e09a35"></i>Frontier</span><span><i class="key" style="background:#7955b6"></i>Reachable now</span></div>
       <p class="map-note" id="map-note"></p>
     </section>
     <aside class="side">
@@ -70,8 +80,10 @@ const data=JSON.parse(document.getElementById("animation-data").textContent);
 const $=id=>document.getElementById(id), NS="http://www.w3.org/2000/svg";
 const names=Object.keys(data.graph), colors={start:"#16835d",goal:"#c8464e",blue:"#1477bd",frontier:"#e09a35",reach:"#7955b6",gray:"#9caebb"};
 const fmt=(n,d=1)=>Number.isFinite(n)?n.toLocaleString("en-US",{maximumFractionDigits:d}):"—";
-const short=name=>name.split(",")[0];
-const state={method:Object.keys(data.methods)[0],index:0,playing:false,timer:null,tab:"queue"};
+const display=name=>data.labels?.[name]||name;
+const short=name=>display(name).split(",")[0];
+const expandedNodes=(run,step)=>step?.expanded||(step?run.trace.slice(0,step.expanded_count??run.trace.indexOf(step)+1).map(t=>t.current):[]);
+const state={method:Object.keys(data.methods)[0],index:0,playing:false,timer:null,tab:"queue",markerScale:1};
 const shapes=new Map(data.shapes.map(s=>[JSON.stringify([s.source,s.target]),s.points]));
 function svg(tag,attrs={},text){const el=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,v);if(text!==undefined)el.textContent=text;return el;}
 function label(text,tag="div",className=""){const el=document.createElement(tag);el.textContent=text;el.className=className;return el;}
@@ -80,53 +92,102 @@ function current(){const run=data.methods[state.method];return {run,frame:run.fr
 function localEdges(frame){if(frame.budget===undefined)return [];return Object.entries(data.graph[frame.current]||{}).filter(([_,miles])=>miles<=frame.budget+1e-9);}
 function latestStep(run,frame){if(frame.phase==="search")return run.trace[frame.trace_index];if(["backtrack","drive","complete","failed"].includes(frame.phase))return run.trace.at(-1);return null;}
 function pointAlong(a,b,progress){const pts=shapes.get(JSON.stringify([a,b]))||[data.points[a],data.points[b]];const lens=pts.slice(1).map((p,i)=>Math.hypot(p[0]-pts[i][0],p[1]-pts[i][1]));let left=progress*lens.reduce((a,b)=>a+b,0);for(let i=0;i<lens.length;i++){if(left<=lens[i]||i===lens.length-1){const t=lens[i]?left/lens[i]:0;return [pts[i][0]+(pts[i+1][0]-pts[i][0])*t,pts[i][1]+(pts[i+1][1]-pts[i][1])*t];}left-=lens[i];}return pts[0];}
+function wrapWords(text,limit=43){
+ const lines=[];let row="";
+ for(const word of text.split(/\s+/)){if(row&&row.length+word.length+1>limit){lines.push(row);row=word;}else row+=(row?" ":"")+word;}
+ if(row)lines.push(row);return lines;
+}
+function focusCallout(layer,point,color,heading,name){
+ const parts=display(name).split(" · "),place=parts.shift(),station=parts.join(" · ");
+ const rows=[{text:heading.toUpperCase(),size:10,weight:750,color},
+  ...wrapWords(place).map(text=>({text,size:13,weight:700,color:colors.ink||"#162c3c"})),
+  ...wrapWords(station).map(text=>({text,size:11,weight:500,color:"#4d6475"}))];
+ const group=svg("g",{class:"focus-callout","data-node":name});let y=17;
+ for(const row of rows){group.append(svg("text",{x:12,y,fill:row.color,"font-size":row.size,"font-weight":row.weight},row.text));y+=row.size===10?19:16;}
+ layer.append(group);const width=Math.min(970,Math.max(145,group.getBBox().width+24)),height=y-5;
+ let x=point[0]+24;if(x+width>990)x=point[0]-width-24;x=Math.max(10,Math.min(x,990-width));
+ let top=point[1]-height-20;if(top<10)top=point[1]+24;top=Math.max(10,Math.min(top,590-height));
+ const connector=svg("line",{x1:point[0],y1:point[1],x2:Math.max(x,Math.min(point[0],x+width)),y2:Math.max(top,Math.min(point[1],top+height)),stroke:color,"stroke-width":1.5,opacity:.7});layer.insertBefore(connector,group);
+ group.setAttribute("transform",`translate(${x},${top})`);
+ group.insertBefore(svg("rect",{x:0,y:0,width,height,rx:8,fill:"white",stroke:color,"stroke-width":1.5}),group.firstChild);
+ group.append(svg("title",{},heading+": "+display(name)));
+}
 function renderMap(run,frame,step){
  const map=$("map");map.replaceChildren();
  const defs=svg("defs"),marker=svg("marker",{id:"arrow",viewBox:"0 0 10 10",refX:16,refY:5,markerWidth:4,markerHeight:4,orient:"auto-start-reverse"});marker.append(svg("path",{d:"M 0 0 L 10 5 L 0 10 z",fill:colors.reach}));defs.append(marker);map.append(defs);
  if(data.background){const bg=data.background;map.append(svg("image",{href:bg.url,x:bg.x,y:bg.y,width:bg.width,height:bg.height,opacity:.5}));}
- const base=svg("g"),revealed=svg("g"),routes=svg("g"),focus=svg("g"),nodes=svg("g"),labels=svg("g"),car=svg("g");map.append(base,revealed,routes,focus,nodes,labels,car);
- if($("all-edges").checked){for(const a of names)for(const b of Object.keys(data.graph[a]))line(base,a,b,"#9baab7",.8,{opacity:.22});}
- const searchPhase=["start","build","search"].includes(frame.phase);
- if(frame.phase==="search"&&step){for(const a of new Set(step.expanded))for(const b of Object.keys(data.graph[a]))line(revealed,a,b,colors.blue,1,{opacity:.24});}
- if(frame.phase==="backtrack"){const path=frame.reverse_path;for(let i=1;i<path.length;i++)line(routes,path[i],path[i-1],colors.blue,3,{road:true,dash:data.road_shapes?null:"8 5"});}
- if(["drive","complete"].includes(frame.phase)&&run.path){for(let i=1;i<run.path.length;i++)line(routes,run.path[i-1],run.path[i],colors.blue,2.7,{road:true,dash:data.road_shapes?null:"8 5",opacity:.55});const completed=frame.phase==="complete"?run.legs.length:(frame.car_leg??Math.max(0,run.path.indexOf(frame.car_node)));for(let i=0;i<completed;i++)line(routes,run.legs[i].source,run.legs[i].target,colors.start,3.5,{road:true,dash:data.road_shapes?null:"8 5"});}
+ if(data.background_paths)map.append(svg("path",{d:data.background_paths,fill:"none",stroke:"#c7d2dc","stroke-width":.55,opacity:.7}));
+ // Small background dots go below the route and all active markers.
+ const base=svg("g"),revealed=svg("g"),nodes=svg("g",{"data-layer":"chargers"}),routes=svg("g",{"data-layer":"route"}),focus=svg("g"),stops=svg("g",{"data-layer":"stops"}),labels=svg("g"),car=svg("g",{"data-layer":"car"}),callouts=svg("g");
+ map.append(base,revealed,nodes,routes,focus,stops,labels,car,callouts);
+ if($("all-edges").checked){let count=0;drawing:for(const a of names)for(const b of Object.keys(data.graph[a])){if(count++>=4000)break drawing;line(base,a,b,"#9baab7",.8,{opacity:.16});}}
+ const searchPhase=["start","build","search"].includes(frame.phase),driving=["drive","complete"].includes(frame.phase);
+ if(frame.phase==="search"&&step){let count=0;drawing:for(const a of new Set(expandedNodes(run,step)))for(const b of Object.keys(data.graph[a])){if(count++>=8000)break drawing;line(revealed,a,b,colors.blue,1,{opacity:.17});}}
+ const visiblePath=frame.phase==="backtrack"?[...frame.reverse_path].reverse():(driving?run.path:null);
+ if(frame.phase==="backtrack"){const path=frame.reverse_path;for(let i=1;i<path.length;i++)line(routes,path[i],path[i-1],colors.blue,3.5,{road:true,dash:data.road_shapes?null:"8 5"});}
+ if(driving&&run.path){for(let i=1;i<run.path.length;i++)line(routes,run.path[i-1],run.path[i],colors.blue,3.5,{road:true,dash:data.road_shapes?null:"8 5",opacity:.75});const completed=frame.phase==="complete"?run.legs.length:(frame.car_leg??Math.max(0,run.path.indexOf(frame.car_node)));for(let i=0;i<completed;i++)line(routes,run.legs[i].source,run.legs[i].target,colors.start,4,{road:true,dash:data.road_shapes?null:"8 5"});}
  const edges=frame.phase==="start"?[]:localEdges(frame),reachable=new Set(edges.map(([b])=>b));
- for(const [b] of edges)line(focus,frame.current,b,colors.reach,2,{opacity:.72,arrow:true});
- const expanded=new Set(step?.expanded||[]),frontier=new Set(step?.frontier.map(n=>n.node)||[]),updated=new Set(step?.updates.map(n=>n.node)||[]);
- for(const name of names){const [x,y]=data.points[name];let color=colors.gray;if(searchPhase&&expanded.has(name))color=colors.blue;if(searchPhase&&frontier.has(name))color=colors.frontier;if(reachable.has(name)&&!searchPhase)color=colors.reach;if(name===data.source)color=colors.start;if(name===data.target)color=colors.goal;const size=name===data.target||name===data.source?7:5;const g=svg("g");g.append(svg("circle",{cx:x,cy:y,r:size,fill:color,stroke:"white","stroke-width":1.5}));g.append(svg("title",{},name+(data.graph[frame.current]?.[name]!==undefined?` · ${fmt(data.graph[frame.current][name])} driving mi from focus`:"")));nodes.append(g);
-  const important=names.length<=8||name===data.source||name===data.target||name===frame.current||(frame.phase==="search"&&updated.has(name))||(["backtrack","drive","complete"].includes(frame.phase)&&run.path?.includes(name));
-  if(important){const isGoal=name===data.target;const dy=isGoal?-12:(names.indexOf(name)%2?-11:17);labels.append(svg("text",{x:x+7,y:y+dy,fill:name===frame.current?colors.blue:"#364d5e","font-size":names.length<=8?14:11,"font-weight":name===frame.current?700:500,stroke:"white","stroke-width":3,"paint-order":"stroke","stroke-linejoin":"round"},short(name)));}
+ for(const [b] of edges)line(focus,frame.current,b,colors.reach,1.3,{opacity:.35,arrow:true});
+ const expanded=new Set(expandedNodes(run,step)),frontier=new Set(step?.frontier.map(n=>n.node)||[]);
+ const radius=(names.length>200?1.8:names.length>50?3:5)*state.markerScale;
+ for(const [index,name] of names.entries()){
+  const [x,y]=data.points[name];let color=colors.gray,size=radius,opacity=names.length>200?.4:.65,kind="background";
+  if(searchPhase&&expanded.has(name)){color=colors.blue;size=radius+.8;opacity=.75;kind="expanded";}
+  if(searchPhase&&frontier.has(name)){color=colors.frontier;size=radius+1.3;opacity=.95;kind="frontier";}
+  if(reachable.has(name)&&!searchPhase){color=colors.reach;size=radius+1;opacity=.7;kind="reachable";}
+  const group=svg("g",{"data-node":name});
+  group.append(svg("circle",{cx:x,cy:y,r:Math.max(4,size),fill:"transparent","pointer-events":"all"}),svg("circle",{class:"charger-node node-"+kind,cx:x,cy:y,r:size,fill:color,opacity,"pointer-events":"none"}));
+  group.append(svg("title",{},display(name)+(data.graph[frame.current]?.[name]!==undefined?` · ${fmt(data.graph[frame.current][name])} driving mi from focus`:"")));nodes.append(group);
+  const important=names.length<=8||name===data.source||name===data.target||visiblePath?.includes(name)||(names.length<=200&&frame.phase==="search"&&step?.updates.slice(0,8).some(u=>u.node===name));
+  if(important&&name!==frame.current){const dy=name===data.target?-14:(index%2?-13:19);labels.append(svg("text",{x:x+10,y:y+dy,fill:"#364d5e","font-size":names.length<=8?14:11,"font-weight":500,stroke:"white","stroke-width":3,"paint-order":"stroke","stroke-linejoin":"round"},short(name)));}
  }
- if(frame.phase!=="start"){const p=data.points[frame.current];focus.append(svg("circle",{cx:p[0],cy:p[1],r:12,fill:"none",stroke:colors.reach,"stroke-width":2.5}));}
- let p=data.points[data.source];if(frame.car_node)p=data.points[frame.car_node];if(frame.car_leg!==undefined){const leg=run.legs[frame.car_leg];p=pointAlong(leg.source,leg.target,frame.progress);}
- const cg=svg("g",{transform:`translate(${p[0]},${p[1]})`});cg.append(svg("circle",{r:13,fill:"white",stroke:colors.start,"stroke-width":2.5}),svg("path",{d:"M-7 3 V-2 L-4-6 H4 L7-2 V3 Z M-4 4 V6 M4 4 V6 M-5-1 H5",fill:colors.start,stroke:colors.start,"stroke-width":1.7,"stroke-linejoin":"round"}));cg.append(svg("title",{},"Car: "+(frame.car_node||"at start during planning")));car.append(cg);
+ for(const [index,name] of (visiblePath||[]).entries()){
+  if(name===data.source||name===data.target)continue;
+  const [x,y]=data.points[name],group=svg("g",{class:"route-stop","data-node":name}),numbered=visiblePath[0]===data.source;
+  group.append(svg("circle",{cx:x,cy:y,r:7.5,fill:colors.blue,stroke:"white","stroke-width":1.7}));
+  if(numbered)group.append(svg("text",{x,y:y+3,"text-anchor":"middle",fill:"white","font-size":9,"font-weight":750},String(index)));
+  group.append(svg("title",{},(numbered?`Route stop ${index}: `:"Recovered stop: ")+display(name)));stops.append(group);
+ }
+ for(const [name,color] of [[data.source,colors.start],[data.target,colors.goal]]){const [x,y]=data.points[name],group=svg("g",{"data-node":name});group.append(svg("circle",{cx:x,cy:y,r:8,fill:color,stroke:"white","stroke-width":2}),svg("title",{},display(name)));stops.append(group);}
+ if(!driving&&frame.phase!=="failed"){
+  const point=data.points[frame.current],color=frame.phase==="backtrack"?colors.blue:"#ce731f",group=svg("g",{class:"active-focus","data-node":frame.current});
+  group.append(svg("circle",{cx:point[0],cy:point[1],r:18,fill:color,"fill-opacity":.1,stroke:color,"stroke-width":2.5}),svg("circle",{cx:point[0],cy:point[1],r:7,fill:color,stroke:"white","stroke-width":2}));stops.append(group);
+  focusCallout(callouts,point,color,frame.phase==="backtrack"?"Recovering route":searchPhase&&frame.phase==="search"?"A* is inspecting":"Start here",frame.current);
+ }
+ let point=data.points[data.source];if(frame.car_node)point=data.points[frame.car_node];if(frame.car_leg!==undefined){const leg=run.legs[frame.car_leg];point=pointAlong(leg.source,leg.target,frame.progress);}
+ const cg=svg("g",{class:"car-marker",transform:`translate(${point[0]},${point[1]})`});
+ cg.append(svg("circle",{r:19,fill:colors.start,"fill-opacity":.12}),svg("circle",{r:14,fill:"white",stroke:colors.start,"stroke-width":3}),svg("path",{d:"M-7 3 V-2 L-4-6 H4 L7-2 V3 Z M-4 4 V6 M4 4 V6 M-5-1 H5",fill:colors.start,stroke:colors.start,"stroke-width":1.7,"stroke-linejoin":"round"}));
+ cg.append(svg("title",{},"Car: "+(frame.car_node?display(frame.car_node):driving?"driving the selected leg":display(data.source))));car.append(cg);
+ if(driving){const destination=frame.kind==="motion"?run.legs[frame.car_leg].target:(frame.car_node||frame.current);focusCallout(callouts,point,colors.start,frame.kind==="motion"?"Driving to":frame.kind==="charge"?"Charging here":frame.phase==="complete"?"Destination reached":"Current stop",destination);}
 }
 function table(headers,rows){const wrap=label("","div","table-wrap"),t=document.createElement("table"),thead=document.createElement("thead"),hr=document.createElement("tr");for(const h of headers)hr.append(label(h,"th"));thead.append(hr);t.append(thead);const body=document.createElement("tbody");rows.forEach((row,i)=>{const tr=document.createElement("tr");if(i===0&&state.tab==="queue")tr.className="top";for(const cell of row)tr.append(label(String(cell),"td"));body.append(tr);});t.append(body);wrap.append(t);return wrap;}
 function renderDetails(run,frame,step){const box=$("detail-content");box.replaceChildren();for(const b of document.querySelectorAll("[data-tab]"))b.setAttribute("aria-selected",String(b.dataset.tab===state.tab));box.setAttribute("aria-labelledby","tab-"+state.tab);
- if(state.tab==="queue"){let entries=step?.frontier||[];if(!step&&["start","build"].includes(frame.phase))entries=[{node:data.source,g:0,h:run.h[data.source],f:run.h[data.source]}];if(!entries.length){box.append(label("No pending candidates. "+(run.path?"The goal was reached; unused entries may remain in other searches.":"The frontier is empty."),"div","empty"));return;}box.append(table(["Candidate","g","h","f"],entries.map(n=>[short(n.node),fmt(n.g),fmt(n.h),fmt(n.f)])));
+ if(state.tab==="queue"){let entries=step?.frontier||[];if(!step&&["start","build"].includes(frame.phase))entries=[{node:data.source,g:0,h:run.h[data.source],f:run.h[data.source]}];if(!entries.length){box.append(label("No pending candidates. "+(run.path?"The goal was reached; unused entries may remain in other searches.":"The frontier is empty."),"div","empty"));return;}box.append(table(["Candidate","g","h","f"],entries.map(n=>[short(n.node),fmt(n.g),fmt(n.h),fmt(n.f)])));if((step?.frontier_count??entries.length)>entries.length)box.append(label(`Showing the first ${entries.length} of ${step.frontier_count} candidates by priority.`,"div","empty"));
  }else if(state.tab==="neighbors"){if(frame.kind==="motion"){box.append(label("The car is between stops. This model updates the reachable-stop map when it arrives, then again after a refill.","div","empty"));return;}const edges=frame.phase==="start"?[]:localEdges(frame);if(!edges.length){box.append(label(frame.current===data.target?"The destination ends the trip. It has no outgoing legs.":"No outgoing connections are shown at this step.","div","empty"));return;}const updates=new Set(frame.phase==="search"?step?.updates.map(u=>u.node)||[]:[]);box.append(table(["Next stop","Drive mi",frame.phase==="search"?"Update":"Range after"],edges.sort((a,b)=>a[1]-b[1]).map(([node,miles])=>[short(node),fmt(miles),frame.phase==="search"?(updates.has(node)?"Improved":"Unchanged"):fmt(frame.budget-miles)])));
- }else{if(!["backtrack","drive","complete"].includes(frame.phase)){box.append(label("The final route appears after A* reaches the destination and follows the predecessor links backward.","div","empty"));return;}const path=frame.phase==="backtrack"?[...frame.reverse_path].reverse():run.path;if(!path){box.append(label("No route was found.","div","empty"));return;}const list=label("","div","route-list");path.forEach((name,i)=>{const row=label("","div","route-item"),badge=label(String(i+1),"span","badge");if(["drive","complete"].includes(frame.phase)&&run.path.indexOf(name)<=run.path.indexOf(frame.car_node))row.classList.add("passed");row.append(badge,label(name,"span"));if(i){row.append(label(fmt(data.graph[path[i-1]][name])+" mi","span","mi"));}list.append(row);});box.append(list);}
+ }else{if(!["backtrack","drive","complete"].includes(frame.phase)){box.append(label("The final route appears after A* reaches the destination and follows the predecessor links backward.","div","empty"));return;}const path=frame.phase==="backtrack"?[...frame.reverse_path].reverse():run.path;if(!path){box.append(label("No route was found.","div","empty"));return;}const list=label("","div","route-list");path.forEach((name,i)=>{const row=label("","div","route-item"),badge=label(String(i+1),"span","badge");if(["drive","complete"].includes(frame.phase)&&run.path.indexOf(name)<=run.path.indexOf(frame.car_node))row.classList.add("passed");row.append(badge,label(display(name),"span"));if(i){row.append(label(fmt(data.graph[path[i-1]][name])+" mi","span","mi"));}list.append(row);});box.append(list);}
 }
 function render(){const {run,frame}=current(),step=latestStep(run,frame);const driving=["drive","complete"].includes(frame.phase),remaining=driving?frame.remaining:data.starting_range;$("frame-title").textContent=frame.title;$("frame-message").textContent=frame.message;$("timeline").max=run.frames.length-1;$("timeline").value=state.index;$("step-count").textContent=`${state.index+1} / ${run.frames.length}`;$("previous").disabled=state.index===0;$("next").disabled=state.index===run.frames.length-1;$("play").textContent=state.playing?"❚❚ Pause":"▶ Play";$("jump-backtrack").disabled=!run.path;$("jump-drive").disabled=!run.path;
  for(const button of document.querySelectorAll("[data-method]"))button.classList.toggle("active",button.dataset.method===state.method);
  const phase=driving?"drive":frame.phase==="backtrack"?"backtrack":"search",order=["search","backtrack","drive"];
  for(const node of document.querySelectorAll("[data-phase]")){node.classList.toggle("current",node.dataset.phase===phase);node.classList.toggle("done",order.indexOf(node.dataset.phase)<order.indexOf(phase));}
- $("car-location").textContent=driving?(frame.car_node||`${short(run.legs[frame.car_leg].source)} → ${short(run.legs[frame.car_leg].target)}`):data.source;$("remaining").textContent=fmt(remaining);$("battery-fill").style.width=Math.max(0,Math.min(100,remaining/data.full_range*100))+"%";$("battery").setAttribute("aria-valuenow",remaining);$("battery").setAttribute("aria-valuemin",0);$("battery").setAttribute("aria-valuemax",data.full_range);$("driven").textContent=fmt(frame.driven??0);$("car-status").textContent=driving?(frame.kind==="charge"?"Fully recharged at this selected stop.":frame.kind==="motion"?"Driving the chosen leg.":frame.phase==="complete"?"Trip finished.":"Stopped; displayed range is before any next refill."):"Parked at the start while A* plans.";
+ $("car-location").textContent=driving?((frame.car_node?display(frame.car_node):`${short(run.legs[frame.car_leg].source)} → ${short(run.legs[frame.car_leg].target)}`)):display(data.source);$("remaining").textContent=fmt(remaining);$("battery-fill").style.width=Math.max(0,Math.min(100,remaining/data.full_range*100))+"%";$("battery").setAttribute("aria-valuenow",remaining);$("battery").setAttribute("aria-valuemin",0);$("battery").setAttribute("aria-valuemax",data.full_range);$("driven").textContent=fmt(frame.driven??0);$("car-status").textContent=driving?(frame.kind==="charge"?"Fully recharged at this selected stop.":frame.kind==="motion"?"Driving the chosen leg.":frame.phase==="complete"?"Trip finished.":"Stopped; displayed range is before any next refill."):"Parked at the start while A* plans.";
  $("reachable").textContent=frame.phase==="start"||frame.kind==="motion"?"—":localEdges(frame).length;$("reachable-label").textContent=driving?"reachable next stops":"from search focus";
- $("focus-node").textContent=frame.phase==="start"||frame.phase==="build"?data.source:frame.current;const g=step?.distances[frame.current]??(frame.current===data.source?0:null),h=run.h[frame.current];$("g-score").textContent=fmt(g);$("h-score").textContent=fmt(h);$("f-score").textContent=fmt(g===null?null:g+h);$("search-status").textContent=frame.phase==="search"?`${step.expanded.length} expanded · ${step.updates.length} improved · ${step.frontier.length} in frontier`:["backtrack","drive","complete"].includes(frame.phase)?"Search finished. The car follows the recovered route.":frame.phase==="failed"?"No feasible route. The car stays at the start.":"A* will pop the smallest f = g + h.";
+ $("focus-node").textContent=frame.phase==="start"||frame.phase==="build"?display(data.source):display(frame.current);const g=step?.distances?.[frame.current]??(step?.current===frame.current?step.g:(frame.current===data.source?0:null)),h=run.h[frame.current];$("g-score").textContent=fmt(g);$("h-score").textContent=fmt(h);$("f-score").textContent=fmt(g===null?null:g+h);$("search-status").textContent=frame.phase==="search"?`${step.expanded_count??step.expanded.length} expanded · ${step.updates.length} improved · ${step.frontier_count??step.frontier.length} in frontier`:["backtrack","drive","complete"].includes(frame.phase)?"Search finished. The car follows the recovered route.":frame.phase==="failed"?"No feasible route. The car stays at the start.":"A* will pop the smallest f = g + h.";
  $("benchmark-title").textContent=state.method==="manhattan"?"A* + scaled Manhattan":"A* + Haversine";$("timing-value").textContent=run.median_ms.toFixed(4)+" ms";$("expanded-total").textContent=run.expanded;$("heuristic-note").textContent=`h scale α = ${run.scale.toFixed(6)} · estimates checked against every feasible edge.`;renderMap(run,frame,step);renderDetails(run,frame,step);
 }
 function stop(){state.playing=false;if(state.timer!==null)clearTimeout(state.timer);state.timer=null;}
 function go(index){stop();state.index=Math.max(0,Math.min(index,current().run.frames.length-1));render();}
 function tick(){if(!state.playing)return;if(state.index>=current().run.frames.length-1){stop();render();return;}state.index++;render();state.timer=setTimeout(tick,Number($("speed").value));}
 function jump(phase){const idx=current().run.frames.findIndex(f=>f.phase===phase);if(idx>=0){if(phase==="backtrack")state.tab="route";if(phase==="drive")state.tab="neighbors";go(idx);}}
-$("trip-title").textContent=`${data.source} → ${data.target}`;document.title=$("trip-title").textContent+" · A* EV explorer";$("start-range").textContent=fmt(data.starting_range);$("full-range").textContent=fmt(data.full_range);$("node-count").textContent=names.length;
-$("map-note").textContent=data.road_shapes?"Colored route lines use OSRM road geometry. Purple connections show feasible stop pairs; each weight is driving mileage.":"Dashed routes and purple connections join stops directly on this diagram. Their weights are driving miles; the lines are not road shapes.";
-$("scope-note").textContent=(data.demo?"Small example: city coordinates are real; road distances are illustrative. ":"Selected corridor sites, not all US chargers. Distances follow OSRM's fastest routes and are rounded to whole miles. ")+"The battery-feasible graph is built once; search playback reveals its connections. Full refills happen only at selected intermediate stops. Local maps refresh at stops, not continuously between them. "+(data.background?"Map © OpenStreetMap contributors. Roads: OSRM. ":"");
+$("trip-title").textContent=`${display(data.source)} → ${display(data.target)}`;document.title=$("trip-title").textContent+" · A* EV explorer";$("start-range").textContent=fmt(data.starting_range);$("full-range").textContent=fmt(data.full_range);$("node-count").textContent=names.length;
+$("map-note").textContent=data.road_shapes?(data.local_road_shapes?"Colored routes follow our search on the OSM road graph, with direct access links. Purple connections show feasible stop pairs.":"Colored route lines use OSRM road geometry. Purple connections show feasible stop pairs; each weight is driving mileage."):"Dashed routes and purple connections join stops directly on this diagram. Their weights are driving miles; the lines are not road shapes.";
+$("scope-note").textContent=(data.dataset_label?data.dataset_label+" ":data.demo?"Small example: city coordinates are real; road distances are illustrative. ":"Selected corridor sites, not all US chargers. Distances follow OSRM's fastest routes and are rounded to whole miles. ")+"The battery-feasible graph is built once; search playback reveals its connections. Full refills happen only at selected intermediate stops. Local maps refresh at stops, not continuously between them. "+(data.background?"Map © OpenStreetMap contributors. Roads: OSRM. ":"");
 for(const method of Object.keys(data.methods)){const b=label(method==="manhattan"?"Scaled Manhattan":"Haversine","button");b.dataset.method=method;b.onclick=()=>{const {frame}=current();stop();state.method=method;const frames=current().run.frames;const same=frames.findIndex(f=>f.phase===frame.phase&&f.current===frame.current&&f.kind===frame.kind);state.index=same<0?0:same;render();};$("methods").append(b);}
 for(const b of document.querySelectorAll("[data-tab]"))b.onclick=()=>{state.tab=b.dataset.tab;render();};
+$("marker-size").oninput=e=>{state.markerScale=Number(e.target.value)/100;$("marker-size-value").textContent=e.target.value+"%";const {run,frame}=current();renderMap(run,frame,latestStep(run,frame));};
 $("previous").onclick=()=>go(state.index-1);$("next").onclick=()=>go(state.index+1);$("restart").onclick=()=>go(0);$("timeline").oninput=e=>go(Number(e.target.value));$("all-edges").onchange=()=>render();$("jump-search").onclick=()=>jump("build");$("jump-backtrack").onclick=()=>jump("backtrack");$("jump-drive").onclick=()=>jump("drive");$("play").onclick=()=>{if(state.playing){stop();render();return;}if(state.index>=current().run.frames.length-1)state.index=0;state.playing=true;render();state.timer=setTimeout(tick,Number($("speed").value));};
 document.addEventListener("keydown",e=>{if(["INPUT","SELECT","BUTTON"].includes(e.target.tagName))return;if(e.key==="ArrowRight"){e.preventDefault();go(state.index+1);}else if(e.key==="ArrowLeft"){e.preventDefault();go(state.index-1);}});
+if((data.edge_count??0)>4000){document.querySelector(".map-switch").lastChild.textContent=" Show graph edges (up to 4,000)";$("map-note").textContent+=" Background connection lines are capped for display only; every charger and feasible edge remains in the search.";}
 render();
 </script>
 </body>
