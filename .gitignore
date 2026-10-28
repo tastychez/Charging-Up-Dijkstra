@@ -4,5 +4,23 @@ __pycache__/
 .DS_Store
 cache/
 .env
+
+# Large generated data, in case it lands outside data/ or cache/
+*.osm
+*.osm.pbf
+*.pkl
+*.npz
+.venv/
+.env
+.DS_Store
+__pycache__/
+*.pyc
+data/
+cache/
 AStar/results/
 AStar/cache/
+*.osm
+*.osm.pbf
+*.pkl
+*.npz
+*.zip
