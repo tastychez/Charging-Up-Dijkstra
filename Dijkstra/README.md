@@ -1,23 +1,26 @@
-# Boston → Dallas in a Tesla: Dijkstra on a range-limited graph
+# Dallas → Boston in an EV: Dijkstra on a range-limited graph
 
-**Question.** A Tesla drives from Boston to Dallas. Which Superchargers should it stop at
-so that the total distance is as short as possible? The catch is the limited range: the car
-cannot drive directly between every pair of stations.
+**Question.** An electric car drives from Dallas to Boston. Which DC fast chargers should it
+stop at so that the total distance is as short as possible? The catch is the limited range:
+the car cannot drive directly between every pair of chargers.
 
 ![Dijkstra's search on the real map](figures/search_on_map.gif)
 
 ## Run it
 
+This folder runs on the real charger network built at the repository root, so it uses the
+root `.venv` and `data/` (see the root README: `charger_graph.py` builds `data/`).
+
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python main.py               # analysis + all figures
-.venv/bin/python main.py --show        # also play the search live in a window
-.venv/bin/python main.py --range 300   # try another battery range (default 250)
+../.venv/bin/python main.py               # analysis + all figures
+../.venv/bin/python main.py --show        # also play the search live in a window
+../.venv/bin/python main.py --range 240   # another range (default 200, up to 240)
+../.venv/bin/python main.py --start "Buffalo, NY" --end "Springfield, MO"   # another trip
+../.venv/bin/python trip_table.py         # slide table: search time and work per trip
 ```
 
-Or run everything in one go: `./run_all.sh` (add `--quick` to skip `main.py`). It sets up
-`.venv` if needed, runs `runtime.py` and `main.py`, then opens the web demo.
+Or run everything in one go: `./run_all.sh` (add `--quick` to skip `main.py`). It runs
+`runtime.py`, `main.py` and `compare_library.py`, then opens the web demo and the figures.
 
 **Web demo.** Open `dijkstra-demo.html` in any browser (no install, works offline). It replays
 Dijkstra one line of code at a time, highlighting the line next to the map, the waitlist and
@@ -25,146 +28,204 @@ the distance table, and compares the real runtime with the slowed-down animation
 The source is in `web/` (TypeScript + React): `npm install`, then `npm run dev` to develop
 or `npm run build:single` to rebuild `dijkstra-demo.html`.
 
-**Runtime.** `.venv/bin/python runtime.py` times a minimal Dijkstra on the real trip and on
+**Runtime.** `../.venv/bin/python runtime.py` times a minimal Dijkstra on the real trip and on
 random graphs from 1k to 64k nodes, and saves `figures/runtime.png`.
 
-`main.py` prints every Dijkstra step, the best route, and how the answer changes with range,
-then writes the figures to `figures/`. The first run downloads the map and the road data
-(1–2 minutes). After that, everything comes from `cache/`, so later runs take a few seconds
-and work offline.
+`main.py` prints Dijkstra's progress, the best route, and how the answer changes with range,
+then writes the figures to `figures/`. The first run of a trip builds its network from `data/`
+(about a minute) and caches it in `cache/` (`cache/network.pkl` for Dallas → Boston); it also
+downloads the map tiles and the road shapes it draws. Later runs take about 15 seconds and
+work offline. Figures for another trip get its name, e.g. `figures/route_buffalo_springfield.png`.
 
 | File | What it does |
 |---|---|
-| `stations.py` | the 37 sites: Boston, Dallas, and 35 Supercharger sites in between |
-| `realmap.py` | fetches the real map: OpenStreetMap tiles, plus driving distances and road shapes from OSRM |
+| `network.py` | loads the real network for a trip: every DC fast charger in the 17 states, and the road miles between them |
+| `realmap.py` | fetches the map for the figures: OpenStreetMap tiles, and road shapes from OSRM |
 | `dijkstra.py` | Dijkstra's algorithm, path traceback, and the range-limited charging graph |
+| `hand.py` | our hand-written Dijkstra and A*, run on the same network |
 | `visualize.py` | every figure, including the animation of the search on the map |
 | `main.py` | runs the analysis and makes the figures |
 | `runtime.py` | minimal Dijkstra plus a runtime function, timed on growing graphs |
+| `compare_library.py` | our hand-written Dijkstra against NetworkX's and SciPy's at every range |
+| `trip_table.py` | time, nodes expanded and edges checked for Dallas → Boston and Buffalo → Springfield |
 | `web/` | TypeScript + React step-by-step demo; built into `dijkstra-demo.html` |
 | `run_all.sh` | runs everything above and opens the demo |
 
-To plan a different trip, edit `START`, `END` and `STATIONS` in `stations.py`, and the map
-frame `BOUNDS` in `visualize.py`.
-
 ## Data
 
-- **Stations.** Approximate locations of Supercharger sites along two corridors:
-  - **Southern:** I-84 to Harrisburg, I-81 down the Shenandoah Valley, I-40 across Tennessee
-    and Arkansas, then I-30 into Texas.
-  - **Northern:** I-70 through Columbus, Indianapolis and St. Louis, then I-44 and US-69
-    through Missouri and Oklahoma.
-- **Road distances.** One request to the [OSRM](https://project-osrm.org) table service
-  returns the real driving distance from every station to every other (37 × 37). OSRM
-  measures each distance along the *fastest* route. A → B and B → A can differ slightly, so
-  the graph is **directed**.
+- **Chargers.** Every public DC fast charger in the 17 states between Dallas and Boston,
+  from the Department of Energy's station list (6,162 stations). Each is matched to its
+  nearest road intersection; stations at the same intersection are merged, which leaves
+  **4,971 charger locations**.
+- **Distances.** Road miles between every two chargers at most 240 miles apart, measured on
+  OpenStreetMap roads (4,218,013 legs). Each leg includes the short detour from the road to
+  the charger at both ends. Roads can be one-way, so A → B and B → A can differ and the
+  graph is **directed**. The start and end of a trip are joined to every charger within 240
+  road miles.
 - **Map.** OpenStreetMap tiles, muted so the data stands out. The roads drawn on top are the
   real routes from the OSRM route service. Map data © OpenStreetMap contributors.
-- Both services are free and public. The code identifies itself, waits a second between
-  OSRM requests, and caches everything, as their usage policies ask.
 
 ## Model
 
-**Nodes** are Boston, Dallas, and the 35 stations. There is an **edge A → B only if a
-fully charged car can drive the road from A to B**: road distance ≤ range. Its **weight is
-that road distance**. The battery limit lives in the structure of the graph, not in the
-algorithm. An edge can pass other stations without stopping at them.
+**Range.** The range is the longest leg the car may drive on one charge. We only use 80% of
+a full battery as a safety margin, so a Model Y's 250 miles gives a **200-mile range**. The
+car is assumed to start with, and recharge to, those 200 miles at every stop.
 
-**Dijkstra.** Start at Boston with distance 0. At each step, *settle* the unsettled station
-closest to Boston. Its distance is now final. Then *relax* its edges: if going through it
+**Nodes** are the start, the end, and the 4,971 chargers. There is an **edge A → B only if the
+leg from A to B is at most the range**. Its **weight is the leg's miles**. The battery limit
+lives in the structure of the graph, not in the algorithm. A leg can pass other chargers
+without stopping. The data has legs up to 240 miles, so ranges up to 240 can be tested.
+
+**Dijkstra.** Start at Dallas with distance 0. At each step, *settle* the unsettled charger
+closest to Dallas. Its distance is now final. Then *relax* its edges: if going through it
 gives a neighbor a shorter distance, update that neighbor and remember where it came from
-(`prev`). Stop when Dallas is settled, then follow `prev` back from Dallas to get the route.
-When two routes are exactly the same length, the one with fewer stops wins.
+(`prev`). Stop when Boston is settled, then follow `prev` back from Boston to get the route.
 
-## Result for a 250-mile range
+**Nodes expanded** is how many nodes Dijkstra settles before it reaches the end; **edges
+checked** is how many edges it looks at while relaxing them. Both measure the search's work.
 
-The charging graph has 37 stations and 212 directed edges. The best route:
+## Result for a 200-mile range
+
+The charging graph has 4,973 nodes and 3,260,801 directed edges.
+Dijkstra settles 4,817 of them before Boston. The best route:
 
 | Leg | Miles |
 |---|---|
-| Boston → Danbury, CT | 158 |
-| Danbury → Harrisburg, PA | 236 |
-| Harrisburg → Winchester, VA | 118 |
-| Winchester → Wytheville, VA | 244 |
-| Wytheville → Knoxville, TN | 182 |
-| Knoxville → Nashville, TN | 179 |
-| Nashville → Memphis, TN | 212 |
-| Memphis → Little Rock, AR | 136 |
-| Little Rock → Sulphur Springs, TX | 240 |
-| Sulphur Springs → Dallas | 81 |
-| **Total (9 charging stops)** | **1786** |
+| Dallas → Texarkana, TX | 175.5 |
+| Texarkana → Benton, AR | 121.7 |
+| Benton → Mason, TN | 196.1 |
+| Mason → Nashville, TN | 175.9 |
+| Nashville → Dandridge, TN | 197.9 |
+| Dandridge → Abingdon, VA | 99.4 |
+| Abingdon → Fincastle, VA | 135.6 |
+| Fincastle → Vienna, VA | 192.5 |
+| Vienna → Monmouth Junction, NJ | 193.6 |
+| Monmouth Junction → North Haven, CT | 123.3 |
+| North Haven → Boston | 126.4 |
+| **Total (10 charging stops)** | **1,737.8** |
 
-![Best route with a 250-mile range](figures/route.png)
+![Best route with a 200-mile range](figures/route.png)
 
-The route takes the southern corridor the whole way. Driving non-stop would be 1762 miles,
-so the nine charging stops add 24 miles of detours off the highway.
+The route takes the southern corridor: I-30 out of Texas, I-40 across Arkansas and
+Tennessee, I-81 up the Shenandoah Valley, then I-95 through New Jersey and into New England.
+(The station list spells Benton, AR as "Bentoin", so the map uses that spelling.)
+
+The graph is directed, so the trip the other way, Boston → Dallas, is a different search:
+1,737.1 miles with 13 stops.
 
 ## The search, step by step
 
-The animation at the top tells the story in four acts:
+The animation at the top tells the story in three acts:
 
-1. **The real map.** The 37 sites.
-2. **Draw the graph.** Edges appear as the allowed distance grows to the full range.
-3. **Dijkstra.** Each frame settles the closest station still in the queue (black ring) and
-   relaxes its edges (orange). Blue dots are settled, and their distances are final. Orange
-   circles are tentative. The strip at the bottom shows the priority queue.
-4. **Trace back** from Dallas through `prev[]`, drawing each leg along the real roads.
+1. **The real network.** All 4,971 chargers.
+2. **Dijkstra.** Each frame jumps ahead about 80 steps. Blue dots are settled (their distance
+   is final), orange dots are waiting in the queue, gray dots are not reached yet, and the
+   thin blue lines are the shortest-path tree (`prev`).
+3. **Trace back** from Boston through `prev[]`, drawing each leg along the real roads.
 
 The same steps as still images, for a printed report:
 
 ![Four moments of the search](figures/search_snapshots.png)
 
-You can watch the two corridors race. Dijkstra settles stations in order of distance, so
-it expands both corridors side by side. Breezewood, Columbus, Indianapolis, St. Louis,
-Tulsa and the rest of the northern corridor are all settled before Dallas, at 480 to
-1720 miles. Every one of them ends up off the final route. Dijkstra has no sense of
-direction, so it has to settle all 37 stations before it reaches Dallas, the farthest one.
-A heuristic search like A* aims toward Dallas and would explore far less of the northern
-corridor.
+Dijkstra settles chargers in order of distance from Dallas, so the search spreads out like a
+ripple in every direction: Chicago, Michigan and the whole Midwest are settled before Boston,
+and they all end up off the final route. Boston sits in the far corner of the network, so
+almost every charger is closer to Dallas than Boston is: Dijkstra settles 97% of the network
+before it reaches Boston. A* (`hand.py`) aims toward Boston and settles 3,246 instead of
+4,817, a third fewer.
 
 ## Varying the range
 
 ![Total miles and stops vs. range](figures/range_sweep.png)
 
-| Range (mi) | Total miles | Stops | Stations settled | What changes |
-|---|---|---|---|---|
-| < 129 | — | — | — | no route |
-| 129 | 1846 | 19 | 27 | Nashville → Jackson (129 mi) is the bottleneck |
-| 176 | 1819 | 15 | 37 | Columbus → Indianapolis (176 mi) links up the northern corridor |
-| 250 | 1786 | 9 | 37 | |
-| 400 | 1767 | 5 | 37 | |
-| 738 | 1762 | 2 | 37 | as short as driving non-stop |
+| Range (mi) | Total miles | Stops |
+|---|---|---|
+| 40 | — | — (no route) |
+| 44 | 1,846.7 | 56 |
+| 80 | 1,743.9 | 27 |
+| 120 | 1,739.9 | 18 |
+| 160 | 1,738.8 | 13 |
+| 200 | 1,737.8 | 10 |
+| 240 | 1,737.6 | 8 |
 
-![The charging graph at four ranges](figures/range_comparison.png)
+![Routes at four ranges](figures/range_comparison.png)
 
 What the sweep shows:
 
-1. **Minimum range = the worst gap that cannot be avoided: 129 miles.** It is the stretch
-   from Nashville to Jackson, TN. Below that, no path in the graph leads from Boston to
-   Dallas. Finding the smallest range that still connects them is a
-   *bottleneck* (minimax) path problem, a cousin of the shortest-path problem.
-2. **The northern corridor never wins.** Below 176 miles it is not even connected, because
-   Columbus → Indianapolis is 176 miles. Above that, Dijkstra explores it every time and
-   rejects it every time. Even with unlimited range, going through St. Louis is 1808 miles,
-   46 more than driving the southern corridor non-stop.
-3. **Total distance never gets worse as range grows.** A larger range only *adds* edges, and
+1. **With real chargers, even a tiny range works.** Chargers are so dense that a 43-mile
+   range already connects Dallas to Boston; at 44 miles the route needs 56 stops. Below 43
+   miles some gap cannot be crossed. Finding that smallest workable range is a *bottleneck*
+   (minimax) path problem, a cousin of the shortest-path problem.
+2. **Total distance never gets worse as range grows.** A larger range only *adds* edges, and
    adding edges can never make a shortest path longer.
-4. **Range buys fewer detours.** Every stop means leaving the highway, so the total falls
-   from 1846 miles at a 129-mile range to 1762 miles, the non-stop distance, at 738 miles.
-5. **Stops do not always fall.** For example, a 235-mile range gives 10 stops and 1800 miles,
-   while 213 miles gives 9 stops and 1802 miles. The objective is miles, so Dijkstra accepts
-   an extra stop to save 2 miles.
+3. **Range mostly buys fewer stops, not fewer miles.** From a 120-mile range to 240 miles
+   the trip gets only 2.3 miles shorter, but needs 10 fewer stops.
+4. **Stops are not the objective.** Dijkstra only counts miles; stops fall because longer
+   legs happen to need fewer of them. On Boston → Dallas a 188-mile range even gives one
+   more stop than 184 miles, to save 0.07 miles. `trip.py` at the root instead puts fewest
+   stops first.
+
+## Hand-written vs library Dijkstra
+
+`../.venv/bin/python compare_library.py` runs three Dijkstras on the same charging graph at
+every range from 40 to 240 miles: ours (`dijkstra.py`), NetworkX's `single_source_dijkstra`
+(pure Python) and SciPy's `csgraph.dijkstra` (compiled C). Only the search is timed.
+
+| Range | Edges | Miles | Stops | Hand-written | NetworkX | SciPy |
+|---|---|---|---|---|---|---|
+| 80 | 1,022,729 | 1,743.9 | 27 | 54 ms | 96 ms | 1.5 ms |
+| 160 | 2,385,773 | 1,738.8 | 13 | 128 ms | 226 ms | 3.5 ms |
+| 200 | 3,260,801 | 1,737.8 | 10 | 167 ms | 304 ms | 4.6 ms |
+| 240 | 4,219,576 | 1,737.6 | 8 | 213 ms | 389 ms | 5.7 ms |
+
+![Each method's route at 200 miles](figures/library_routes.png)
+
+![Search time of each method](figures/library_runtime.png)
+
+- **Same answer.** At every range all three find the same distance and the same stops.
+- **Ours beats NetworkX by about 1.8x.** Both are pure Python and stop at Boston, but NetworkX
+  looks up each edge's weight in an attribute dictionary and handles general cases, while
+  ours reads a plain number from `{node: {neighbor: miles}}`.
+- **SciPy is about 35x faster than ours** even though it finds the distance to *every*
+  charger, not just Boston: its loop runs in compiled C over arrays instead of Python dicts.
+  The algorithm is the same; the constant factor is what differs.
+- All three grow roughly in line with the number of edges, as O((V + E) log V) predicts.
+  The 40-mile point is low because there is no route: the search runs out of reachable
+  chargers after 871 of them and stops. Timings are the fastest of 3 runs on an Apple laptop.
+
+## Second trip: Buffalo → Springfield, MO
+
+The same network and the same 200-mile range, from Buffalo, NY to Springfield, MO:
+**931.7 miles with 5 charging stops**, at Rocky River, OH (mile 195), Findlay, OH (299),
+Plainfield, IN (491), Vandalia, IL (652) and Sullivan, MO (782).
+
+![Buffalo to Springfield with a 200-mile range](figures/route_buffalo_springfield.png)
+
+The trip is half as long as Dallas → Boston, but the search does 80% as much work:
+Dijkstra settles everything closer to Buffalo than Springfield is, so it covers New England
+and Virginia, behind the start, before it reaches Missouri.
+
+![Dijkstra's search from Buffalo](figures/search_snapshots_buffalo_springfield.png)
+
+`trip_table.py` puts both trips side by side (200-mile range, median of 101 runs):
+
+| Trip | Dijkstra | Median time (ms) | Nodes expanded | Edges checked |
+|---|---|---|---|---|
+| Dallas → Boston | Hand-written | 205.85 | 4,817 | 3,166,390 |
+| Dallas → Boston | NetworkX | 366.38 | 4,817 | 3,166,390 |
+| Dallas → Boston | SciPy | 4.03 | 4,973 | 3,260,801 |
+| Buffalo → Springfield | Hand-written | 147.59 | 3,868 | 2,893,605 |
+
+Ours and NetworkX do exactly the same work; ours is faster per edge. SciPy does not stop at
+the end, so it settles every node and checks every edge, and is still the fastest. These
+times are medians, so they run a little higher than the fastest-of-3 times above.
 
 ## Limitations
 
-- Station coordinates are approximate, at the town level, so the size of each stop's detour
-  off the highway is approximate too. Exact Supercharger locations, for example from the
-  AFDC station API that `data.py` at the repo root uses, would sharpen this.
 - The model assumes a full charge at every stop and a fixed range. In reality range drops
-  with speed, cold weather, and charging only to ~80%. A safety margin can be modeled by
-  lowering the range.
+  with speed and cold weather. Using 80% of the battery (200 of 250 miles) is a simple
+  safety margin.
 - It minimizes distance, not travel time, and ignores charging time. The same algorithm
-  works for time with a different edge weight (OSRM can also return durations).
-- OSRM's distances follow the fastest route, which is not always the shortest, so they do
-  not exactly satisfy the triangle inequality.
-- The public OSRM server is fine for a class project but not for heavy use.
+  works for time with a different edge weight.
+- Every DC fast charger counts, whatever its network or plug type; a real car can only use
+  the ones with a compatible plug.

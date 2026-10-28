@@ -1,8 +1,9 @@
 """A minimal Dijkstra, and a stopwatch to see how its running time grows.
 
 Run from this folder:
-    .venv/bin/python runtime.py
-Prints the Boston → Dallas route, a timing table, and saves figures/runtime.png.
+    ../.venv/bin/python runtime.py
+Prints the Dallas → Boston route on the real network, a timing table, and saves
+figures/runtime.png.
 """
 
 import heapq
@@ -14,8 +15,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 import dijkstra as full
-from realmap import road_distances
-from stations import END, START, STATIONS
+from network import END, START, load_network
 
 FIGURES = Path(__file__).parent / "figures"
 SIZES = [1000, 2000, 4000, 8000, 16000, 32000, 64000]  # nodes in the random test graphs
@@ -92,20 +92,20 @@ def random_graph(n, degree, seed=0):
     return graph
 
 
-def demo_real_trip(max_range=250):
-    road_miles = road_distances(STATIONS)
-    graph = full.charging_graph(road_miles, max_range)
-    (best, prev), seconds = runtime(dijkstra, graph, START, END, repeat=100)
+def demo_real_trip(max_range=200):
+    _, cities, _, legs = load_network()
+    graph = full.charging_graph(legs, max_range)
+    (best, prev), seconds = runtime(dijkstra, graph, START, END, repeat=3)
 
     stops = path_to(prev, START, END)
-    print(f"Boston → Dallas with a {max_range}-mile range "
-          f"({len(graph)} stations, {sum(map(len, graph.values()))} edges)")
-    print(f"  {best[END]} miles: " + " → ".join(stops))
-    print(f"  runtime: {seconds * 1e6:.0f} µs")
+    print(f"Dallas → Boston with a {max_range}-mile range "
+          f"({len(graph) - 2:,} chargers, {sum(map(len, graph.values())):,} edges)")
+    print(f"  {best[END]:,.1f} miles, {len(stops) - 2} stops: " + " → ".join(cities[v] for v in stops))
+    print(f"  runtime: {seconds * 1e3:.0f} ms")
 
-    expected = full.plan_route(road_miles, START, END, max_range)[1]
-    assert best[END] == expected, f"simple version says {best[END]}, dijkstra.py says {expected}"
-    print(f"  matches dijkstra.py ({expected} miles)\n")
+    expected = full.plan_route(legs, START, END, max_range)[1]
+    assert abs(best[END] - expected) < 1e-6, f"simple version says {best[END]}, dijkstra.py says {expected}"
+    print(f"  matches dijkstra.py ({expected:,.1f} miles)\n")
 
 
 def demo_growth():

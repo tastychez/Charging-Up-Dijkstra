@@ -8,13 +8,14 @@
    per leg), so the route with the fewest stops wins, then the shortest one.
 4. Turn each leg back into the actual roads with a shortest path on the street graph.
 
-`find_path` is the algorithm used in step 3. It defaults to NetworkX's Dijkstra
-until our own Dijkstra and A* are ready. Any function with the same signature as
-networkx.dijkstra_path(graph, source, target, weight) can be passed in.
+`find_path` is the algorithm used in step 3. It defaults to our own Dijkstra
+(search.py); our A* and NetworkX's Dijkstra give the same route. Any function with
+the same signature as networkx.dijkstra_path(graph, source, target, weight) works.
 
 Usage:
     python trip.py "Dallas, TX" "Boston, MA"
     python trip.py "Dallas, TX" "Boston, MA" --range 150
+    python trip.py "Dallas, TX" "Boston, MA" --algorithm astar
     python trip.py "Pittsfield, MA" "Provincetown, MA" --region massachusetts --range 80
 """
 
@@ -30,6 +31,7 @@ from matplotlib.collections import LineCollection
 from scipy.sparse.csgraph import dijkstra
 
 import data
+import search
 from charger_graph import load_charger_graph, street_matrix
 
 FIGURE_DIR = Path(__file__).parent / "figures"
@@ -64,7 +66,7 @@ def _road_path(matrix, nodes, index, a, b, limit):
 
 
 def plan_trip(start, end, range_miles=250, region="dallas-boston",
-              road_types=data.ROUTE_ROADS, find_path=nx.dijkstra_path):
+              road_types=data.ROUTE_ROADS, find_path=search.dijkstra_path):
     usable = range_miles * BUFFER
     G = data.load_street_graph(region, road_types)
     matrix, nodes, index = street_matrix(G)
@@ -85,6 +87,7 @@ def plan_trip(start, end, range_miles=250, region="dallas-boston",
     to_end = dijkstra(matrix.T.tocsr(), indices=index[ends["END"]["node"]], limit=usable)
 
     T = C.copy()
+    T.graph.update(usable_miles=usable, stop_cost_miles=STOP_COST_MILES)  # for A*'s guess
     for label, info in ends.items():
         T.add_node(label, name=info["place"], lat=info["lat"], lon=info["lon"],
                    snap_miles=info["snap_miles"])
@@ -184,9 +187,12 @@ def main():
     parser.add_argument("--range", type=int, default=250, help="car range in miles")
     parser.add_argument("--region", default="dallas-boston")
     parser.add_argument("--roads", choices=list(data.ROAD_LEVELS), default="route")
+    parser.add_argument("--algorithm", choices=list(search.ALGORITHMS), default="dijkstra",
+                        help="shortest-path algorithm for the charging stops (default: our Dijkstra)")
     args = parser.parse_args()
 
-    trip = plan_trip(args.start, args.end, args.range, args.region, data.ROAD_LEVELS[args.roads])
+    trip = plan_trip(args.start, args.end, args.range, args.region, data.ROAD_LEVELS[args.roads],
+                     find_path=search.ALGORITHMS[args.algorithm])
     print(f"{trip['start']['place']} to {trip['end']['place']} with a {args.range} mile range "
           f"(legs up to {trip['usable_miles']:.0f} miles)")
     for i, leg in enumerate(trip["legs"], 1):
