@@ -109,32 +109,41 @@ algorithms find the same shortest route; A\* expands about a third fewer vertice
 Times are the fastest of 3 runs on an Apple laptop, after the graph is loaded.
 `check_graphs.py` checks that our Dijkstra and A\* match NetworkX on every test trip.
 
-**Results across trips** (250 mile range, so legs of at most 200 miles). The first 11
-trips use the Dallas to Boston graph (4,973 vertices), the last one the Buffalo to
-Springfield graph (2,115 vertices). All three algorithms find the same shortest
-distance on every trip. A\* helps least on Dallas to Boston: the map was cut around
-that route, so nearly every charger lies on the way and the straight-line guess
-rules out few of them. It helps most when the trip sits in the middle of the map,
-where Dijkstra spreads out in every direction and A\* heads toward the target.
+**Results for both trips** (250 mile range, so legs of at most 200 miles). Dallas to
+Boston uses the Dallas to Boston graph (4,973 vertices), Buffalo to Springfield its own
+graph (2,115 vertices). We compare two guesses for A\*:
 
-| Trip | Straight line (mi) | Route (mi) | Charging stops | Dijkstra expanded | A\* expanded | A\* reduction | Dijkstra (ms) | A\* (ms) | NetworkX (ms) | A\* speedup vs Dijkstra |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Boston, MA → New York, NY | 190 | 208.8 | 1 | 735 | 336 | 54% | 125 | 63 | 107 | 2.0x |
-| Louisville, KY → Richmond, VA | 456 | 546.4 | 3 | 1,947 | 211 | 89% | 156 | 19 | 131 | 8.2x |
-| Pittsburgh, PA → Boston, MA | 482 | 552.7 | 3 | 3,388 | 769 | 77% | 459 | 167 | 396 | 2.7x |
-| Dallas, TX → Nashville, TN | 617 | 660.7 | 3 | 1,376 | 258 | 81% | 78 | 19 | 68 | 4.2x |
-| Chicago, IL → New York, NY | 711 | 779.7 | 4 | 3,114 | 734 | 76% | 352 | 94 | 291 | 3.7x |
-| Memphis, TN → Baltimore, MD | 792 | 893.7 | 5 | 3,249 | 555 | 83% | 277 | 50 | 252 | 5.5x |
-| St. Louis, MO → Philadelphia, PA | 808 | 865.6 | 5 | 3,450 | 712 | 79% | 337 | 85 | 280 | 3.9x |
-| Columbus, OH → Dallas, TX | 912 | 1,018.1 | 8 | 4,272 | 811 | 81% | 542 | 71 | 459 | 7.6x |
-| Oklahoma City, OK → New York, NY | 1,324 | 1,429.3 | 9 | 4,082 | 1,256 | 69% | 447 | 141 | 369 | 3.2x |
-| Dallas, TX → Boston, MA | 1,549 | 1,737.8 | 10 | 4,817 | 3,246 | 33% | 592 | 468 | 488 | 1.3x |
-| Boston, MA → Dallas, TX | 1,549 | 1,737.1 | 13 | 4,268 | 3,457 | 19% | 560 | 518 | 487 | 1.1x |
-| Buffalo, NY → Springfield, MO | 856 | 931.7 | 5 | 2,060 | 735 | 64% | 191 | 78 | 162 | 2.5x |
+- **Haversine**: the straight-line (great-circle) miles to the target.
+- **Scaled Manhattan**: north/south miles + east/west miles to the target, times a
+  scale α. Plain Manhattan is longer than the straight line, so it can overestimate
+  (it does on 709,115 legs of the Dallas to Boston graph). α is the largest number
+  that makes the guess consistent on every leg of the graph: 0.708 for Dallas to
+  Boston, 0.701 for Buffalo to Springfield (`prepare_heuristic` in `heuristics.py`
+  on the `david-astar` branch).
 
-Times are the fastest of 3 runs, after the graph is loaded. Dallas to Boston and
-Boston to Dallas are almost the same length but use 10 and 13 stops: the search only
-minimizes miles, so both are shortest routes.
+All four searches find the same shortest route.
+
+| Trip | Straight line (mi) | Route (mi) | Charging stops | Algorithm | Expanded | Fewer than Dijkstra | Time (ms) | Speedup vs Dijkstra |
+|---|---|---|---|---|---|---|---|---|
+| Dallas, TX → Boston, MA | 1,549 | 1,737.8 | 10 | Our Dijkstra | 4,817 | - | 523 | 1.0x |
+| | | | | A\* Haversine | 3,246 | 33% | 424 | 1.2x |
+| | | | | A\* Scaled Manhattan | 4,177 | 13% | 505 | 1.0x |
+| | | | | NetworkX Dijkstra | - | - | 439 | - |
+| Buffalo, NY → Springfield, MO | 856 | 931.7 | 5 | Our Dijkstra | 2,060 | - | 151 | 1.0x |
+| | | | | A\* Haversine | 735 | 64% | 64 | 2.4x |
+| | | | | A\* Scaled Manhattan | 895 | 57% | 68 | 2.2x |
+| | | | | NetworkX Dijkstra | - | - | 129 | - |
+
+Times are the fastest of 3 runs, after the graph is loaded. NetworkX doesn't report
+how many vertices it expands.
+
+Haversine beats Scaled Manhattan on both trips. Manhattan is between 1 and 1.41 times the
+straight line, so after scaling by about 0.7 it is between 0.7 and 1 times the straight
+line: never a better guess than Haversine, and only as good on an exact diagonal. A
+smaller guess rules out fewer chargers. Both guesses help least on Dallas to
+Boston: the map was cut around that route, so nearly every charger lies on the way.
+They help more on Buffalo to Springfield, where Dijkstra spreads out in every
+direction and A\* heads toward the target.
 
 ## Maps
 

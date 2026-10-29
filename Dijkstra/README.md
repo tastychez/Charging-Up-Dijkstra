@@ -17,6 +17,7 @@ root `.venv` and `data/` (see the root README: `charger_graph.py` builds `data/`
 ../.venv/bin/python main.py --range 240   # another range (default 200, up to 240)
 ../.venv/bin/python main.py --start "Buffalo, NY" --end "Springfield, MO"   # another trip
 ../.venv/bin/python trip_table.py         # slide table: search time and work per trip
+../.venv/bin/python astar_table.py        # slide table: Dijkstra vs A* (two heuristics)
 ```
 
 Or run everything in one go: `./run_all.sh` (add `--quick` to skip `main.py`). It runs
@@ -48,6 +49,7 @@ work offline. Figures for another trip get its name, e.g. `figures/route_buffalo
 | `runtime.py` | minimal Dijkstra plus a runtime function, timed on growing graphs |
 | `compare_library.py` | our hand-written Dijkstra against NetworkX's and SciPy's at every range |
 | `trip_table.py` | time, nodes expanded and edges checked for Dallas → Boston and Buffalo → Springfield |
+| `astar_table.py` | Dijkstra against A* with a Haversine and a scaled Manhattan guess, same two trips |
 | `web/` | TypeScript + React step-by-step demo; built into `dijkstra-demo.html` |
 | `run_all.sh` | runs everything above and opens the demo |
 
@@ -219,6 +221,28 @@ and Virginia, behind the start, before it reaches Missouri.
 Ours and NetworkX do exactly the same work; ours is faster per edge. SciPy does not stop at
 the end, so it settles every node and checks every edge, and is still the fastest. These
 times are medians, so they run a little higher than the fastest-of-3 times above.
+
+## Dijkstra vs A*
+
+`astar_table.py` runs both trips again with A*, which adds a guess of the miles left to the
+end, so it settles chargers toward the goal first. Two guesses: straight-line (Haversine)
+miles, and north-south plus east-west (Manhattan) miles. Manhattan can overestimate a leg,
+so it is scaled down until it never does (by 0.71 for Dallas → Boston, 0.70 for Buffalo →
+Springfield); Haversine needs no scaling. All three find the same route on both trips.
+
+| Trip | Algorithm | Expanded | Fewer than Dijkstra | Time |
+|---|---|---|---|---|
+| Dallas → Boston | Dijkstra | 4,817 | – | 169 ms |
+| Dallas → Boston | A* Haversine | 3,246 | 33% | 132 ms |
+| Dallas → Boston | A* Scaled Manhattan | 4,177 | 13% | 166 ms |
+| Buffalo → Springfield | Dijkstra | 3,868 | – | 143 ms |
+| Buffalo → Springfield | A* Haversine | 740 | 81% | 19 ms |
+| Buffalo → Springfield | A* Scaled Manhattan | 1,021 | 74% | 26 ms |
+
+Haversine is the closer guess, so it always expands fewer nodes. A* helps far more on
+Buffalo → Springfield: from Buffalo, Dijkstra first searches New England, behind the start,
+which A* skips. From Dallas, Boston is in the far corner, so most of the network lies
+roughly on the way and even A* has to settle it.
 
 ## Limitations
 
