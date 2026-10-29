@@ -4,21 +4,6 @@
 stop at so that the total distance is as short as possible? The catch is the limited range:
 the car cannot drive directly between every pair of chargers.
 
-## Results at a glance
-
-Dijkstra and A* on two real trips, 200-mile range. All three algorithms find the same
-shortest route: Dallas → Boston 1,737.8 miles with 10 stops, Buffalo → Springfield
-931.7 miles with 5 stops. Details in [Dijkstra vs A*](#dijkstra-vs-a).
-
-| Trip | Algorithm | Nodes expanded (chargers finalized before reaching the destination) | Fewer nodes expanded than Dijkstra (1 − A* ÷ Dijkstra) | Median search time (101 runs) |
-|---|---|---|---|---|
-| Dallas → Boston | Dijkstra | 4,817 | – | 169 ms |
-| Dallas → Boston | A* Haversine | 3,246 | 33% | 132 ms |
-| Dallas → Boston | A* Scaled Manhattan | 4,177 | 13% | 166 ms |
-| Buffalo → Springfield | Dijkstra | 3,868 | – | 143 ms |
-| Buffalo → Springfield | A* Haversine | 740 | 81% | 19 ms |
-| Buffalo → Springfield | A* Scaled Manhattan | 1,021 | 74% | 26 ms |
-
 ![Dijkstra's search on the real map](figures/search_on_map.gif)
 
 ## Run it
@@ -155,16 +140,6 @@ before it reaches Boston. A* (`hand.py`) aims toward Boston and settles 3,246 in
 
 ![Total miles and stops vs. range](figures/range_sweep.png)
 
-| Range (mi) | Total miles | Stops |
-|---|---|---|
-| 40 | — | — (no route) |
-| 44 | 1,846.7 | 56 |
-| 80 | 1,743.9 | 27 |
-| 120 | 1,739.9 | 18 |
-| 160 | 1,738.8 | 13 |
-| 200 | 1,737.8 | 10 |
-| 240 | 1,737.6 | 8 |
-
 ![Routes at four ranges](figures/range_comparison.png)
 
 What the sweep shows:
@@ -187,13 +162,6 @@ What the sweep shows:
 `../.venv/bin/python compare_library.py` runs three Dijkstras on the same charging graph at
 every range from 40 to 240 miles: ours (`dijkstra.py`), NetworkX's `single_source_dijkstra`
 (pure Python) and SciPy's `csgraph.dijkstra` (compiled C). Only the search is timed.
-
-| Range | Edges | Miles | Stops | Hand-written | NetworkX | SciPy |
-|---|---|---|---|---|---|---|
-| 80 | 1,022,729 | 1,743.9 | 27 | 54 ms | 96 ms | 1.5 ms |
-| 160 | 2,385,773 | 1,738.8 | 13 | 128 ms | 226 ms | 3.5 ms |
-| 200 | 3,260,801 | 1,737.8 | 10 | 167 ms | 304 ms | 4.6 ms |
-| 240 | 4,219,576 | 1,737.6 | 8 | 213 ms | 389 ms | 5.7 ms |
 
 ![Each method's route at 200 miles](figures/library_routes.png)
 
@@ -245,7 +213,14 @@ miles, and north-south plus east-west (Manhattan) miles. Manhattan can overestim
 so it is scaled down until it never does (by 0.71 for Dallas → Boston, 0.70 for Buffalo →
 Springfield); Haversine needs no scaling. All three find the same route on both trips.
 
-The results are in the table at the top of this page.
+| Trip | Algorithm | Nodes expanded (chargers finalized before reaching the destination) | Fewer nodes expanded than Dijkstra (1 − A* ÷ Dijkstra) | Median search time (101 runs) |
+|---|---|---|---|---|
+| Dallas → Boston | Dijkstra | 4,817 | – | 169 ms |
+| Dallas → Boston | A* Haversine | 3,246 | 33% | 132 ms |
+| Dallas → Boston | A* Scaled Manhattan | 4,177 | 13% | 166 ms |
+| Buffalo → Springfield | Dijkstra | 3,868 | – | 143 ms |
+| Buffalo → Springfield | A* Haversine | 740 | 81% | 19 ms |
+| Buffalo → Springfield | A* Scaled Manhattan | 1,021 | 74% | 26 ms |
 
 Haversine is the closer guess, so it always expands fewer nodes. A* helps far more on
 Buffalo → Springfield: from Buffalo, Dijkstra first searches New England, behind the start,
