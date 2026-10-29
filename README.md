@@ -42,7 +42,7 @@ python3 -m venv .venv
 ```
 
 Second example, Buffalo, NY to Springfield, MO, on its own six-state map (NY PA OH IN IL MO).
-On the full Dallas to Boston map the same trip gives the same answer (4 stops, 956.1 miles at 250 miles of range).
+On the full Dallas to Boston map the same trip gives the same answer (5 stops, 931.7 miles at 250 miles of range).
 
 ```bash
 .venv/bin/python charger_graph.py --region buffalo-springfield
