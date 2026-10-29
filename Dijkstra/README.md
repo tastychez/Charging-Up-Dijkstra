@@ -4,6 +4,21 @@
 stop at so that the total distance is as short as possible? The catch is the limited range:
 the car cannot drive directly between every pair of chargers.
 
+## Results at a glance
+
+Dijkstra and A* on two real trips, 200-mile range. All three algorithms find the same
+shortest route: Dallas → Boston 1,737.8 miles with 10 stops, Buffalo → Springfield
+931.7 miles with 5 stops. Details in [Dijkstra vs A*](#dijkstra-vs-a).
+
+| Trip | Algorithm | Nodes expanded (chargers finalized before reaching the destination) | Fewer nodes expanded than Dijkstra (1 − A* ÷ Dijkstra) | Median search time (101 runs) |
+|---|---|---|---|---|
+| Dallas → Boston | Dijkstra | 4,817 | – | 169 ms |
+| Dallas → Boston | A* Haversine | 3,246 | 33% | 132 ms |
+| Dallas → Boston | A* Scaled Manhattan | 4,177 | 13% | 166 ms |
+| Buffalo → Springfield | Dijkstra | 3,868 | – | 143 ms |
+| Buffalo → Springfield | A* Haversine | 740 | 81% | 19 ms |
+| Buffalo → Springfield | A* Scaled Manhattan | 1,021 | 74% | 26 ms |
+
 ![Dijkstra's search on the real map](figures/search_on_map.gif)
 
 ## Run it
@@ -230,14 +245,7 @@ miles, and north-south plus east-west (Manhattan) miles. Manhattan can overestim
 so it is scaled down until it never does (by 0.71 for Dallas → Boston, 0.70 for Buffalo →
 Springfield); Haversine needs no scaling. All three find the same route on both trips.
 
-| Trip | Algorithm | Nodes expanded (chargers finalized before reaching the destination) | Fewer nodes expanded than Dijkstra (1 − A* ÷ Dijkstra) | Median search time (101 runs) |
-|---|---|---|---|---|
-| Dallas → Boston | Dijkstra | 4,817 | – | 169 ms |
-| Dallas → Boston | A* Haversine | 3,246 | 33% | 132 ms |
-| Dallas → Boston | A* Scaled Manhattan | 4,177 | 13% | 166 ms |
-| Buffalo → Springfield | Dijkstra | 3,868 | – | 143 ms |
-| Buffalo → Springfield | A* Haversine | 740 | 81% | 19 ms |
-| Buffalo → Springfield | A* Scaled Manhattan | 1,021 | 74% | 26 ms |
+The results are in the table at the top of this page.
 
 Haversine is the closer guess, so it always expands fewer nodes. A* helps far more on
 Buffalo → Springfield: from Buffalo, Dijkstra first searches New England, behind the start,
