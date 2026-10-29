@@ -230,7 +230,7 @@ miles, and north-south plus east-west (Manhattan) miles. Manhattan can overestim
 so it is scaled down until it never does (by 0.71 for Dallas → Boston, 0.70 for Buffalo →
 Springfield); Haversine needs no scaling. All three find the same route on both trips.
 
-| Trip | Algorithm | Expanded | Fewer than Dijkstra | Time |
+| Trip | Algorithm | Nodes expanded (chargers finalized before reaching the destination) | Fewer nodes expanded than Dijkstra (1 − A* ÷ Dijkstra) | Median search time (101 runs) |
 |---|---|---|---|---|
 | Dallas → Boston | Dijkstra | 4,817 | – | 169 ms |
 | Dallas → Boston | A* Haversine | 3,246 | 33% | 132 ms |
@@ -241,8 +241,11 @@ Springfield); Haversine needs no scaling. All three find the same route on both 
 
 Haversine is the closer guess, so it always expands fewer nodes. A* helps far more on
 Buffalo → Springfield: from Buffalo, Dijkstra first searches New England, behind the start,
-which A* skips. From Dallas, Boston is in the far corner, so most of the network lies
-roughly on the way and even A* has to settle it.
+which A* skips. On Dallas → Boston the gain is small for a geometric reason. With a guess
+that never overestimates, A* must expand every charger v whose miles from Dallas plus its
+guess to Boston are under the shortest trip (1,737.8 miles): an ellipse around the straight
+line from Dallas to Boston (1,549 miles). The 17 states were chosen to cover exactly that
+corridor, so 3,245 chargers lie inside it, and A* expands those and nothing else.
 
 ## Limitations
 

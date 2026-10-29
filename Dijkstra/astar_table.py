@@ -95,7 +95,7 @@ def main():
         print(f"{trip}: {best[end]:,.2f} mi, {len(route) - 2} stops for all three", flush=True)
 
     print(f"\n{RANGE}-mile range, median of {args.trials} runs\n")
-    print("| Trip | Algorithm | Expanded | Fewer than Dijkstra | Time |")
+    print("| Trip | Algorithm | Nodes expanded (chargers finalized before reaching the destination) | Fewer nodes expanded than Dijkstra (1 − A* ÷ Dijkstra) | Median search time (101 runs) |")
     print("|---|---|---|---|---|")
     base = {}
     for trip, name, expanded, ms, _, _ in rows:
